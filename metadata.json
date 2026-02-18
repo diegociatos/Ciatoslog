@@ -1,0 +1,8 @@
+{
+  "name": "CIATOSLOG — Gestão Logística",
+  "description": "Uma plataforma profissional de gestão logística com módulos de Dashboard, Comercial, Programação, Financeiro e Portal do Cliente.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
