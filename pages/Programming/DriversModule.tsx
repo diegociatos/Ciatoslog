@@ -4,7 +4,7 @@ import {
   Plus, Search, Filter, Contact2, Star, Truck, CheckCircle2, AlertTriangle, 
   X, MoreVertical, MapPin, History, CreditCard, Building2, FileText, 
   Phone, Mail, ShieldCheck, Calendar, Wallet, Users, Edit2, Lock, 
-  Unlock, Trash2, ChevronRight, Globe, TrendingUp, Sparkles, MapPinned
+  Unlock, Trash2, ChevronRight, Globe, TrendingUp, Sparkles, MapPinned, FileUp
 } from 'lucide-react';
 import { Driver, VehicleType, RouteEntry } from '../../App';
 
@@ -22,7 +22,7 @@ const DriversModule: React.FC<DriversModuleProps> = ({ drivers, setDrivers, vehi
   const [selectedDriverId, setSelectedDriverId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const [formData, setFormData] = useState<Partial<Driver>>({
+  const [formData, setFormData] = useState<any>({
     type: 'PF', status: 'Disponível', rating: 5.0, completedTrips: 0, historyRoutes: []
   });
 
@@ -108,7 +108,12 @@ const DriversModule: React.FC<DriversModuleProps> = ({ drivers, setDrivers, vehi
   };
 
   const resetForm = () => {
-    setFormData({ type: 'PF', status: 'Disponível', rating: 5.0, completedTrips: 0, historyRoutes: [] });
+    setFormData({ 
+      type: 'PF', status: 'Disponível', rating: 5.0, completedTrips: 0, historyRoutes: [],
+      bank: '', agency: '', account: '', accountType: '', holderName: '', pixKey: '',
+      isThirdParty: false, thirdPartyHolder: '', thirdPartyCnpjCpf: '', thirdPartyBank: '',
+      thirdPartyAgency: '', thirdPartyAccount: '', thirdPartyJustification: ''
+    });
     setSelectedDriverId(null);
   };
 
@@ -331,32 +336,110 @@ const DriversModule: React.FC<DriversModuleProps> = ({ drivers, setDrivers, vehi
                 <button onClick={() => { setShowModal(false); resetForm(); }} className="p-2 hover:bg-white/10 rounded-xl"><X size={32} /></button>
              </div>
              <div className="flex-1 overflow-y-auto p-12 bg-gray-50/30 space-y-10">
-                <div className="grid grid-cols-2 gap-8">
-                   <div className="space-y-6">
-                      <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-200 pb-2 italic">Identificação Básica</h4>
-                      <div className="space-y-4">
-                         <div className="grid grid-cols-2 gap-2 p-1 bg-gray-100 rounded-xl">
-                            <button onClick={() => setFormData({...formData, type: 'PF'})} className={`py-2 rounded-lg font-black text-[10px] uppercase tracking-widest transition-all ${formData.type === 'PF' ? 'bg-white text-bordeaux shadow-sm' : 'text-gray-400'}`}>Pessoa Física</button>
-                            <button onClick={() => setFormData({...formData, type: 'PJ'})} className={`py-2 rounded-lg font-black text-[10px] uppercase tracking-widest transition-all ${formData.type === 'PJ' ? 'bg-white text-bordeaux shadow-sm' : 'text-gray-400'}`}>Pessoa Jurídica</button>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+                   {/* Coluna 1: Identificação e Bancário */}
+                   <div className="space-y-10">
+                      <div className="space-y-6">
+                         <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-200 pb-2 italic">Identificação Básica</h4>
+                         <div className="space-y-4">
+                            <div className="grid grid-cols-2 gap-2 p-1 bg-gray-100 rounded-xl">
+                               <button onClick={() => setFormData({...formData, type: 'PF'})} className={`py-2 rounded-lg font-black text-[10px] uppercase tracking-widest transition-all ${formData.type === 'PF' ? 'bg-white text-bordeaux shadow-sm' : 'text-gray-400'}`}>Pessoa Física</button>
+                               <button onClick={() => setFormData({...formData, type: 'PJ'})} className={`py-2 rounded-lg font-black text-[10px] uppercase tracking-widest transition-all ${formData.type === 'PJ' ? 'bg-white text-bordeaux shadow-sm' : 'text-gray-400'}`}>Pessoa Jurídica</button>
+                            </div>
+                            <Input label="Nome Completo / Razão" value={formData.name || ''} onChange={(e:any) => setFormData({...formData, name: e.target.value})} />
+                            <Input label="CPF / CNPJ" value={formData.cnpj_cpf || ''} onChange={(e:any) => setFormData({...formData, cnpj_cpf: e.target.value})} />
+                            <Input label="Celular / WhatsApp" value={formData.phone || ''} onChange={(e:any) => setFormData({...formData, phone: e.target.value})} />
                          </div>
-                         <Input label="Nome Completo / Razão" value={formData.name || ''} onChange={(e:any) => setFormData({...formData, name: e.target.value})} />
-                         <Input label="CPF / CNPJ" value={formData.cnpj_cpf || ''} onChange={(e:any) => setFormData({...formData, cnpj_cpf: e.target.value})} />
-                         <Input label="Celular / WhatsApp" value={formData.phone || ''} onChange={(e:any) => setFormData({...formData, phone: e.target.value})} />
+                      </div>
+
+                      <div className="space-y-6">
+                         <h4 className="text-[10px] font-black text-bordeaux uppercase tracking-widest border-b border-bordeaux/20 pb-2 italic flex items-center gap-2">
+                            <Wallet size={14} /> Dados Bancários
+                         </h4>
+                         <div className="grid grid-cols-2 gap-4">
+                            <Input label="Banco" value={formData.bank || ''} onChange={(e:any) => setFormData({...formData, bank: e.target.value})} />
+                            <Input label="Agência" value={formData.agency || ''} onChange={(e:any) => setFormData({...formData, agency: e.target.value})} />
+                            <Input label="Conta" value={formData.account || ''} onChange={(e:any) => setFormData({...formData, account: e.target.value})} />
+                            <div className="space-y-1">
+                               <label className="text-[10px] font-black text-gray-500 uppercase block pl-1">Tipo de Conta</label>
+                               <select value={formData.accountType || ''} onChange={e => setFormData({...formData, accountType: e.target.value})} className="w-full px-5 py-3 bg-white border border-gray-200 rounded-xl font-black text-gray-800 outline-none shadow-sm">
+                                  <option value="">Selecione...</option>
+                                  <option value="Corrente">Corrente</option>
+                                  <option value="Poupança">Poupança</option>
+                               </select>
+                            </div>
+                         </div>
+                         <Input label="Nome do Titular" value={formData.holderName || ''} onChange={(e:any) => setFormData({...formData, holderName: e.target.value})} />
+                         <div className="grid grid-cols-2 gap-4">
+                            <Input label="PIX (Chave Principal)" value={formData.pix || ''} onChange={(e:any) => setFormData({...formData, pix: e.target.value})} />
+                            <Input label="Chave PIX (Opcional)" value={formData.pixKey || ''} onChange={(e:any) => setFormData({...formData, pixKey: e.target.value})} />
+                         </div>
                       </div>
                    </div>
-                   <div className="space-y-6">
-                      <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-200 pb-2 italic">Frota & Financeiro</h4>
-                      <div className="space-y-4">
-                         <div className="space-y-1">
-                            <label className="text-[10px] font-black text-gray-500 uppercase block pl-1">Tipo de Veículo</label>
-                            <select value={formData.vehicleType} onChange={e => setFormData({...formData, vehicleType: e.target.value})} className="w-full px-5 py-3 bg-white border border-gray-200 rounded-xl font-black text-gray-800 outline-none">
-                               <option value="">Selecione...</option>
-                               {vehicleTypes.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
-                            </select>
+
+                   {/* Coluna 2: Frota e Terceiros */}
+                   <div className="space-y-10">
+                      <div className="space-y-6">
+                         <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-200 pb-2 italic">Frota & Operacional</h4>
+                         <div className="space-y-4">
+                            <div className="space-y-1">
+                               <label className="text-[10px] font-black text-gray-500 uppercase block pl-1">Tipo de Veículo</label>
+                               <select value={formData.vehicleType} onChange={e => setFormData({...formData, vehicleType: e.target.value})} className="w-full px-5 py-3 bg-white border border-gray-200 rounded-xl font-black text-gray-800 outline-none">
+                                  <option value="">Selecione...</option>
+                                  {vehicleTypes.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
+                               </select>
+                            </div>
+                            <Input label="Placa" value={formData.plate || ''} onChange={(e:any) => setFormData({...formData, plate: e.target.value.toUpperCase()})} />
+                            <Input label="ANTT (RNTRC)" value={formData.antt || ''} onChange={(e:any) => setFormData({...formData, antt: e.target.value})} />
                          </div>
-                         <Input label="Placa" value={formData.plate || ''} onChange={(e:any) => setFormData({...formData, plate: e.target.value.toUpperCase()})} />
-                         <Input label="ANTT (RNTRC)" value={formData.antt || ''} onChange={(e:any) => setFormData({...formData, antt: e.target.value})} />
-                         <Input label="Chave PIX para Pagamentos" value={formData.pix || ''} onChange={(e:any) => setFormData({...formData, pix: e.target.value})} />
+                      </div>
+
+                      <div className="space-y-6">
+                         <h4 className="text-[10px] font-black text-bordeaux uppercase tracking-widest border-b border-bordeaux/20 pb-2 italic flex items-center gap-2">
+                            <Users size={14} /> Conta de Terceiro
+                         </h4>
+                         <div className="space-y-4">
+                            <label className="flex items-center gap-3 p-4 bg-white border border-gray-200 rounded-2xl cursor-pointer hover:bg-gray-50 transition-all shadow-sm">
+                               <input 
+                                  type="checkbox" 
+                                  className="w-5 h-5 accent-bordeaux" 
+                                  checked={formData.isThirdParty || false}
+                                  onChange={e => setFormData({...formData, isThirdParty: e.target.checked})}
+                               />
+                               <span className="text-xs font-black text-gray-700 uppercase tracking-tight">Pagamento será realizado em conta de terceiro</span>
+                            </label>
+
+                            {formData.isThirdParty && (
+                               <div className="space-y-4 animate-in slide-in-from-top-2 duration-300">
+                                  <Input label="Nome do Titular (Terceiro)" value={formData.thirdPartyHolder || ''} onChange={(e:any) => setFormData({...formData, thirdPartyHolder: e.target.value})} />
+                                  <Input label="CPF / CNPJ (Terceiro)" value={formData.thirdPartyCnpjCpf || ''} onChange={(e:any) => setFormData({...formData, thirdPartyCnpjCpf: e.target.value})} />
+                                  <div className="grid grid-cols-3 gap-2">
+                                     <Input label="Banco" value={formData.thirdPartyBank || ''} onChange={(e:any) => setFormData({...formData, thirdPartyBank: e.target.value})} />
+                                     <Input label="Agência" value={formData.thirdPartyAgency || ''} onChange={(e:any) => setFormData({...formData, thirdPartyAgency: e.target.value})} />
+                                     <Input label="Conta" value={formData.thirdPartyAccount || ''} onChange={(e:any) => setFormData({...formData, thirdPartyAccount: e.target.value})} />
+                                  </div>
+                                  <div className="space-y-1">
+                                     <label className="text-[10px] font-black text-gray-500 uppercase block pl-1">Justificativa do Pagamento</label>
+                                     <textarea 
+                                        value={formData.thirdPartyJustification || ''} 
+                                        onChange={e => setFormData({...formData, thirdPartyJustification: e.target.value})}
+                                        className="w-full px-5 py-3 bg-white border border-gray-200 rounded-xl font-black text-gray-800 focus:ring-4 focus:ring-bordeaux/5 outline-none transition-all shadow-sm min-h-[80px]"
+                                        placeholder="Descreva o motivo do pagamento para terceiros..."
+                                     />
+                                  </div>
+                                  <div className="space-y-1">
+                                     <label className="text-[10px] font-black text-gray-500 uppercase block pl-1">Autorização / Print da Conversa</label>
+                                     <div className="relative group">
+                                        <input type="file" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+                                        <div className="w-full px-5 py-4 bg-white border-2 border-dashed border-gray-200 rounded-xl flex items-center justify-center gap-3 group-hover:border-bordeaux/30 transition-all">
+                                           <FileUp size={20} className="text-gray-400 group-hover:text-bordeaux" />
+                                           <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest group-hover:text-bordeaux">Upload de Autorização</span>
+                                        </div>
+                                     </div>
+                                  </div>
+                               </div>
+                            )}
+                         </div>
                       </div>
                    </div>
                 </div>
