@@ -5,7 +5,8 @@ import {
   X, Search, ArrowRight, Star, Sparkles, ChevronDown, Navigation,
   DollarSign, AlertCircle, ShieldCheck, ShieldAlert, ChevronRight,
   Flag, FileText, Weight, Layers, ArrowRightLeft, Trophy, History,
-  MinusCircle, PlusCircle, Receipt, Scale, Package, Info, Edit3, RefreshCcw
+  MinusCircle, PlusCircle, Receipt, Scale, Package, Info, Edit3, RefreshCcw,
+  Building2, Target, ClipboardList, Phone, UserCheck, Briefcase, HardDrive
 } from 'lucide-react';
 import { Load, Driver, useCompany } from '../../App';
 
@@ -20,6 +21,133 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
   const [activeTab, setActiveTab] = useState<'Aguardando' | 'EmTransito'>('Aguardando');
   const [programmingLoad, setProgrammingLoad] = useState<Load | null>(null);
   
+  // Estados de Negociação
+  const [selectionStep, setSelectionStep] = useState<1 | 2>(1);
+  const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
+  const [freightValue, setFreightValue] = useState<number>(0);
+  const [retentionAccepted, setRetentionAccepted] = useState<boolean>(true);
+  const [extraExpenses, setExtraExpenses] = useState<{description: string, value: number}[]>([]);
+  const [advanceValue, setAdvanceValue] = useState<number>(0);
+
+  // Estados de Cadastro Rápido de Motorista
+  const [localDrivers, setLocalDrivers] = useState<Driver[]>([]);
+  const [isRegisteringDriver, setIsRegisteringDriver] = useState(false);
+  const [newDriverData, setNewDriverData] = useState({
+    name: '',
+    cnpj_cpf: '',
+    type: 'PF' as 'PF' | 'PJ',
+    phone: '',
+    vehicleType: '',
+    plate: '',
+    pix: ''
+  });
+
+  const [searchTerm, setSearchTerm] = useState('');
+
+  const allDrivers = useMemo(() => {
+    const combined = [...drivers, ...localDrivers];
+    if (!searchTerm) return combined;
+    const term = searchTerm.toLowerCase();
+    return combined.filter(d => 
+      d.name.toLowerCase().includes(term) || 
+      d.cnpj_cpf.toLowerCase().includes(term) || 
+      d.plate.toLowerCase().includes(term)
+    );
+  }, [drivers, localDrivers, searchTerm]);
+
+  // Resetar estados ao fechar ou mudar de carga
+  useEffect(() => {
+    if (!programmingLoad) {
+      setSelectionStep(1);
+      setSelectedDriver(null);
+      setFreightValue(0);
+      setRetentionAccepted(true);
+      setExtraExpenses([]);
+      setAdvanceValue(0);
+      setIsRegisteringDriver(false);
+      setSearchTerm('');
+    } else if (programmingLoad.targetDriverFreight) {
+      setFreightValue(programmingLoad.targetDriverFreight);
+    }
+  }, [programmingLoad]);
+
+  const handleSelectDriver = (driver: Driver) => {
+    setSelectedDriver(driver);
+    setSelectionStep(2);
+  };
+
+  const handleSaveNewDriver = () => {
+    if (!newDriverData.name || !newDriverData.cnpj_cpf || !newDriverData.plate) return;
+
+    const newDriver: Driver = {
+      id: `new-${Date.now()}`,
+      name: newDriverData.name,
+      cnpj_cpf: newDriverData.cnpj_cpf,
+      type: newDriverData.type,
+      phone: newDriverData.phone,
+      vehicleType: newDriverData.vehicleType,
+      plate: newDriverData.plate,
+      pix: newDriverData.pix,
+      antt: '',
+      completedTrips: 0,
+      historyRoutes: [],
+      status: 'Disponível',
+      rating: 5.0,
+      ownerId: activeCompany === 'GLOBAL' ? 'LOG' : activeCompany
+    };
+
+    setLocalDrivers([...localDrivers, newDriver]);
+    setNewDriverData({
+      name: '',
+      cnpj_cpf: '',
+      type: 'PF',
+      phone: '',
+      vehicleType: '',
+      plate: '',
+      pix: ''
+    });
+    setIsRegisteringDriver(false);
+    handleSelectDriver(newDriver);
+  };
+
+  const addExpense = () => {
+    setExtraExpenses([...extraExpenses, { description: '', value: 0 }]);
+  };
+
+  const updateExpense = (index: number, field: 'description' | 'value', value: any) => {
+    const newExpenses = [...extraExpenses];
+    newExpenses[index] = { ...newExpenses[index], [field]: value };
+    setExtraExpenses(newExpenses);
+  };
+
+  const removeExpense = (index: number) => {
+    setExtraExpenses(extraExpenses.filter((_, i) => i !== index));
+  };
+
+  const retentionValue = freightValue * 0.1165;
+  const extraExpensesSum = extraExpenses.reduce((acc, curr) => acc + curr.value, 0);
+  const totalCusto = freightValue + (!retentionAccepted && selectedDriver?.type === 'PF' ? retentionValue : 0) + extraExpensesSum;
+  const saldoFinal = freightValue + extraExpensesSum - advanceValue;
+  const bonusIndex = (programmingLoad?.value && programmingLoad.value > 0) ? (totalCusto / programmingLoad.value) * 100 : 0;
+
+  const handleEfetivar = () => {
+    if (!programmingLoad || !selectedDriver) return;
+
+    const updatedLoad: Load = {
+      ...programmingLoad,
+      status: 'EM TRÂNSITO',
+      driverId: selectedDriver.id,
+      driver: selectedDriver.name,
+      plate: selectedDriver.plate,
+      cost: totalCusto,
+      advance: advanceValue,
+      balance: saldoFinal
+    };
+
+    updateLoad(updatedLoad);
+    setProgrammingLoad(null);
+  };
+
   const waitingLoads = loads.filter(l => l.status === 'AGUARDANDO PROGRAMAÇÃO');
 
   return (
@@ -103,72 +231,548 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
               </button>
             </div>
 
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto p-12 bg-white space-y-10">
-              {/* Resumo da Carga */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100 space-y-2">
-                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Cliente / Tomador</p>
-                  <p className="font-black text-gray-800 text-lg">{programmingLoad.customer}</p>
-                </div>
-                <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100 space-y-2">
-                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Mercadoria / Peso</p>
-                  <p className="font-black text-gray-800 text-lg">{programmingLoad.merchandise || 'Carga Geral'} — {programmingLoad.weight || 0}kg</p>
-                </div>
-                <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100 space-y-2">
-                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Veículo Requerido</p>
-                  <span className="inline-block bg-bordeaux/10 text-bordeaux px-4 py-1.5 rounded-xl text-xs font-black uppercase mt-1">
-                    {programmingLoad.vehicleTypeRequired}
-                  </span>
-                </div>
-              </div>
-
-              {/* Seleção de Motorista (Placeholder Visual) */}
-              <div className="space-y-6">
-                <div className="flex items-center justify-between border-b border-gray-100 pb-4">
-                  <h4 className="text-xl font-black text-gray-800 uppercase tracking-tight flex items-center gap-3">
-                    <User className="text-bordeaux" /> Selecionar Motorista
+            {/* Content Container */}
+            <div className="flex-1 overflow-hidden flex">
+              {/* Sidebar: Dossiê da Carga */}
+              <aside className="w-96 bg-gray-50 border-r border-gray-100 overflow-y-auto p-8 space-y-8 animate-in slide-in-from-left-4 duration-500">
+                <div className="space-y-2">
+                  <h4 className="text-sm font-black text-bordeaux uppercase tracking-widest flex items-center gap-2">
+                    <ClipboardList size={18} /> Dossiê da Carga
                   </h4>
-                  <div className="relative">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                    <input 
-                      type="text" 
-                      placeholder="Buscar por nome, placa ou CPF..." 
-                      className="pl-12 pr-6 py-3 bg-gray-50 border border-gray-100 rounded-2xl font-black text-sm w-80 focus:ring-2 focus:ring-bordeaux/20 outline-none transition-all"
-                    />
+                  <p className="text-[10px] font-bold text-gray-400 uppercase leading-tight">Informações completas para suporte à operação e programação.</p>
+                </div>
+
+                {/* Seção: Dados do Cliente */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-gray-800">
+                    <Building2 size={16} className="text-bordeaux" />
+                    <span className="text-xs font-black uppercase tracking-tight font-serif">Dados do Cliente</span>
+                  </div>
+                  <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm space-y-4">
+                    <div>
+                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Nome Fantasia / Razão Social</p>
+                      <p className="text-xs font-black text-gray-800 uppercase">{programmingLoad.customer}</p>
+                      <p className="text-[10px] font-bold text-gray-400 italic">LOGÍSTICA E TRANSPORTES LTDA</p>
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">CNPJ</p>
+                      <p className="text-xs font-bold text-gray-700">00.000.000/0001-00</p>
+                    </div>
+                    <div className="pt-3 border-t border-gray-50">
+                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1">
+                        <Briefcase size={10} /> Comercial Responsável
+                      </p>
+                      <p className="text-xs font-black text-bordeaux uppercase mt-1">{programmingLoad.commercialRep || 'Setor Comercial'}</p>
+                    </div>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 gap-4">
-                  {drivers.slice(0, 3).map(driver => (
-                    <div key={driver.id} className="group flex items-center justify-between p-6 bg-white border border-gray-100 rounded-3xl hover:border-bordeaux/30 hover:shadow-xl transition-all cursor-pointer">
-                      <div className="flex items-center gap-6">
-                        <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center text-gray-400 group-hover:bg-bordeaux/10 group-hover:text-bordeaux transition-colors">
-                          <User size={32} />
+                {/* Seção: Logística de Rota */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-gray-800">
+                    <MapPin size={16} className="text-bordeaux" />
+                    <span className="text-xs font-black uppercase tracking-tight font-serif">Logística de Rota</span>
+                  </div>
+                  <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm space-y-5">
+                    <div className="space-y-2">
+                      <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest flex items-center gap-1">
+                        <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full" /> Coleta (Origem)
+                      </p>
+                      <p className="text-[11px] font-bold text-gray-700 leading-relaxed">
+                        {programmingLoad.originAddress || programmingLoad.origin}, Nº 123, Bairro Industrial, {programmingLoad.origin}, CEP: 00000-000
+                      </p>
+                      <div className="flex items-center gap-4 pt-1">
+                        <div className="flex items-center gap-1 text-[10px] font-black text-gray-400 uppercase">
+                          <UserCheck size={12} className="text-emerald-500" /> Sr. José
                         </div>
-                        <div>
-                          <div className="flex items-center gap-3 mb-1">
-                            <h5 className="font-black text-gray-800 uppercase">{driver.name}</h5>
-                            <span className="bg-emerald-100 text-emerald-700 text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-widest">{driver.status}</span>
-                            {getCompanyBadge(driver.ownerId)}
+                        <div className="flex items-center gap-1 text-[10px] font-black text-gray-400 uppercase">
+                          <Phone size={12} className="text-emerald-500" /> (11) 99999-9999
+                        </div>
+                      </div>
+                    </div>
+                    <div className="border-t border-gray-50 pt-4 space-y-2">
+                      <p className="text-[9px] font-black text-bordeaux uppercase tracking-widest flex items-center gap-1">
+                        <div className="w-1.5 h-1.5 bg-bordeaux rounded-full" /> Entrega (Destino)
+                      </p>
+                      <p className="text-[11px] font-bold text-gray-700 leading-relaxed">
+                        {programmingLoad.destinationAddress || programmingLoad.destination}, Nº 456, Centro, {programmingLoad.destination}, CEP: 00000-000
+                      </p>
+                      <div className="flex items-center gap-4 pt-1">
+                        <div className="flex items-center gap-1 text-[10px] font-black text-gray-400 uppercase">
+                          <UserCheck size={12} className="text-bordeaux" /> Dra. Maria
+                        </div>
+                        <div className="flex items-center gap-1 text-[10px] font-black text-gray-400 uppercase">
+                          <Phone size={12} className="text-bordeaux" /> (11) 88888-8888
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Seção: Detalhes da Carga */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-gray-800">
+                    <Package size={16} className="text-bordeaux" />
+                    <span className="text-xs font-black uppercase tracking-tight font-serif">Detalhes da Carga</span>
+                  </div>
+                  <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm space-y-4">
+                    <div>
+                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Mercadoria Exata</p>
+                      <p className="text-xs font-black text-gray-800 uppercase">{programmingLoad.merchandise || 'Carga Geral'}</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Peso Real</p>
+                        <p className="text-xs font-bold text-gray-700">{programmingLoad.weight || 0} kg</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Cubagem</p>
+                        <p className="text-xs font-bold text-gray-700">{programmingLoad.volume || 0} m³</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 pt-3 border-t border-gray-50">
+                      <div>
+                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Volumes</p>
+                        <p className="text-xs font-bold text-gray-700">12 Paletes</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Valor da NF</p>
+                        <p className="text-xs font-black text-emerald-600">R$ 125.400,00</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Seção: Requisitos do Veículo */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-gray-800">
+                    <Truck size={16} className="text-bordeaux" />
+                    <span className="text-xs font-black uppercase tracking-tight font-serif">Requisitos do Veículo</span>
+                  </div>
+                  <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Tipo Exigido</p>
+                        <p className="text-xs font-black text-gray-800 uppercase">{programmingLoad.vehicleTypeRequired}</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Carroceria</p>
+                        <p className="text-xs font-black text-gray-800 uppercase">Sider / Baú</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Seção: Financeiro de Suporte */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-gray-800">
+                    <DollarSign size={16} className="text-bordeaux" />
+                    <span className="text-xs font-black uppercase tracking-tight font-serif">Financeiro de Suporte</span>
+                  </div>
+                  <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm space-y-4">
+                    <div className="flex justify-between items-center">
+                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Frete Bruto Cliente</p>
+                      <p className="text-xs font-black text-gray-800">R$ {(programmingLoad.value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                    </div>
+                    <div className="pt-3 border-t border-gray-50">
+                      <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest flex items-center gap-1">
+                        <Target size={10} /> Teto de Negociação
+                      </p>
+                      <p className="text-xl font-black text-gray-800">R$ {(programmingLoad.targetDriverFreight || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Seção: Observações do Comercial */}
+                <div className="space-y-3">
+                  <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1">
+                    <FileText size={12} /> Observações do Comercial
+                  </p>
+                  <div className="bg-amber-50 p-5 rounded-2xl border border-amber-100 shadow-inner">
+                    <p className="text-[10px] font-bold text-amber-900 italic leading-relaxed">
+                      {programmingLoad.commercialNotes || "Nenhuma observação adicional registrada pelo comercial."}
+                    </p>
+                  </div>
+                </div>
+              </aside>
+
+              {/* Main Content Area */}
+              <div className="flex-1 overflow-y-auto p-12 bg-white space-y-10">
+                {selectionStep === 1 ? (
+                  <>
+                    {/* Resumo da Carga (Simplificado pois agora temos o Dossiê) */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                      <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100 space-y-2">
+                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Status da Carga</p>
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
+                          <p className="font-black text-gray-800 text-lg uppercase tracking-tight">Aguardando</p>
+                        </div>
+                      </div>
+                      <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100 space-y-2">
+                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Previsão de Saída</p>
+                        <p className="font-black text-gray-800 text-lg">{new Date().toLocaleDateString('pt-BR')}</p>
+                      </div>
+                      <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100 space-y-2">
+                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Veículo Requerido</p>
+                        <span className="inline-block bg-bordeaux/10 text-bordeaux px-4 py-1.5 rounded-xl text-xs font-black uppercase mt-1">
+                          {programmingLoad.vehicleTypeRequired}
+                        </span>
+                      </div>
+                    </div>
+
+                  {/* Seleção de Motorista */}
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between border-b border-gray-100 pb-4">
+                      <h4 className="text-xl font-black text-gray-800 uppercase tracking-tight flex items-center gap-3">
+                        <User className="text-bordeaux" /> Selecionar Motorista
+                      </h4>
+                      <div className="flex items-center gap-4">
+                        <button 
+                          onClick={() => setIsRegisteringDriver(true)}
+                          className="flex items-center gap-2 bg-emerald-50 text-emerald-600 px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-100 transition-all border border-emerald-100"
+                        >
+                          <PlusCircle size={16} /> Cadastrar Novo Motorista
+                        </button>
+                        <div className="relative">
+                          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                          <input 
+                            type="text" 
+                            placeholder="Buscar por nome, placa ou CPF..." 
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="pl-12 pr-6 py-3 bg-gray-50 border border-gray-100 rounded-2xl font-black text-sm w-80 focus:ring-2 focus:ring-bordeaux/20 outline-none transition-all"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {isRegisteringDriver ? (
+                      <div className="bg-gray-50 p-8 rounded-[32px] border border-gray-200 animate-in slide-in-from-top-4 duration-300">
+                        <div className="flex items-center justify-between mb-8">
+                          <h5 className="text-lg font-black text-gray-800 uppercase tracking-tight flex items-center gap-3">
+                            <Edit3 className="text-emerald-500" /> Cadastro Rápido de Motorista
+                          </h5>
+                          <button onClick={() => setIsRegisteringDriver(false)} className="text-gray-400 hover:text-gray-600">
+                            <X size={20} />
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Nome Completo</label>
+                            <input 
+                              type="text"
+                              value={newDriverData.name}
+                              onChange={(e) => setNewDriverData({...newDriverData, name: e.target.value})}
+                              className="w-full px-5 py-3 bg-white border border-gray-100 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-emerald-500/20"
+                            />
                           </div>
-                          <div className="flex items-center gap-4 text-[11px] font-bold text-gray-400 uppercase tracking-tight">
-                            <span className="flex items-center gap-1"><Truck size={12} /> {driver.vehicleType}</span>
-                            <span className="flex items-center gap-1"><CreditCard size={12} /> {driver.plate}</span>
-                            <span className="flex items-center gap-1 text-amber-500"><Star size={12} fill="currentColor" /> {driver.rating}</span>
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">CPF / CNPJ</label>
+                            <input 
+                              type="text"
+                              value={newDriverData.cnpj_cpf}
+                              onChange={(e) => setNewDriverData({...newDriverData, cnpj_cpf: e.target.value})}
+                              className="w-full px-5 py-3 bg-white border border-gray-100 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-emerald-500/20"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Tipo</label>
+                            <select 
+                              value={newDriverData.type}
+                              onChange={(e) => setNewDriverData({...newDriverData, type: e.target.value as 'PF' | 'PJ'})}
+                              className="w-full px-5 py-3 bg-white border border-gray-100 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-emerald-500/20"
+                            >
+                              <option value="PF">Pessoa Física (PF)</option>
+                              <option value="PJ">Pessoa Jurídica (PJ)</option>
+                            </select>
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">WhatsApp</label>
+                            <input 
+                              type="text"
+                              value={newDriverData.phone}
+                              onChange={(e) => setNewDriverData({...newDriverData, phone: e.target.value})}
+                              className="w-full px-5 py-3 bg-white border border-gray-100 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-emerald-500/20"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Tipo de Veículo</label>
+                            <input 
+                              type="text"
+                              value={newDriverData.vehicleType}
+                              onChange={(e) => setNewDriverData({...newDriverData, vehicleType: e.target.value})}
+                              className="w-full px-5 py-3 bg-white border border-gray-100 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-emerald-500/20"
+                              placeholder="Ex: Truck, Carreta"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Placa</label>
+                            <input 
+                              type="text"
+                              value={newDriverData.plate}
+                              onChange={(e) => setNewDriverData({...newDriverData, plate: e.target.value})}
+                              className="w-full px-5 py-3 bg-white border border-gray-100 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-emerald-500/20"
+                            />
+                          </div>
+                          <div className="space-y-2 md:col-span-2">
+                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Chave PIX</label>
+                            <input 
+                              type="text"
+                              value={newDriverData.pix}
+                              onChange={(e) => setNewDriverData({...newDriverData, pix: e.target.value})}
+                              className="w-full px-5 py-3 bg-white border border-gray-100 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-emerald-500/20"
+                            />
+                          </div>
+                          <div className="flex items-end">
+                            <button 
+                              onClick={handleSaveNewDriver}
+                              className="w-full py-3 bg-emerald-500 text-white font-black rounded-xl uppercase text-xs tracking-widest shadow-lg shadow-emerald-500/20 hover:bg-emerald-600 transition-all"
+                            >
+                              Salvar e Selecionar
+                            </button>
                           </div>
                         </div>
                       </div>
-                      <button className="px-8 py-3 bg-gray-50 text-gray-400 font-black text-[10px] uppercase tracking-widest rounded-xl group-hover:bg-bordeaux group-hover:text-white transition-all">
-                        Selecionar
-                      </button>
+                    ) : (
+                      <div className="grid grid-cols-1 gap-4">
+                        {allDrivers.length > 0 ? (
+                          allDrivers.map(driver => (
+                            <div 
+                              key={driver.id} 
+                              onClick={() => handleSelectDriver(driver)}
+                              className="group flex items-center justify-between p-6 bg-white border border-gray-100 rounded-3xl hover:border-bordeaux/30 hover:shadow-xl transition-all cursor-pointer"
+                            >
+                              <div className="flex items-center gap-6">
+                                <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center text-gray-400 group-hover:bg-bordeaux/10 group-hover:text-bordeaux transition-colors">
+                                  <User size={32} />
+                                </div>
+                                <div>
+                                  <div className="flex items-center gap-3 mb-1">
+                                    <h5 className="font-black text-gray-800 uppercase">{driver.name}</h5>
+                                    <span className="bg-emerald-100 text-emerald-700 text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-widest">{driver.status}</span>
+                                    {getCompanyBadge(driver.ownerId)}
+                                  </div>
+                                  <div className="flex items-center gap-4 text-[11px] font-bold text-gray-400 uppercase tracking-tight">
+                                    <span className="flex items-center gap-1"><Truck size={12} /> {driver.vehicleType}</span>
+                                    <span className="flex items-center gap-1"><CreditCard size={12} /> {driver.plate}</span>
+                                    <span className="flex items-center gap-1 text-amber-500"><Star size={12} fill="currentColor" /> {driver.rating}</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <button className="px-8 py-3 bg-gray-50 text-gray-400 font-black text-[10px] uppercase tracking-widest rounded-xl group-hover:bg-bordeaux group-hover:text-white transition-all">
+                                Selecionar
+                              </button>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="py-20 text-center space-y-4 bg-gray-50 rounded-[32px] border border-dashed border-gray-200">
+                            <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-gray-300 mx-auto shadow-sm">
+                              <User size={32} />
+                            </div>
+                            <p className="text-gray-400 font-bold uppercase text-xs tracking-widest italic">Nenhum motorista encontrado para "{searchTerm}"</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="space-y-10 animate-in slide-in-from-right-4 duration-500">
+                  {/* Motorista Selecionado */}
+                  <div className="bg-bordeaux/5 p-8 rounded-[32px] border border-bordeaux/10 flex items-center justify-between">
+                    <div className="flex items-center gap-6">
+                      <div className="w-20 h-20 bg-bordeaux text-white rounded-2xl flex items-center justify-center shadow-lg shadow-bordeaux/20">
+                        <User size={40} />
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-black text-bordeaux uppercase tracking-widest mb-1">Motorista Selecionado</p>
+                        <h4 className="text-2xl font-black text-gray-800 uppercase tracking-tight">{selectedDriver?.name}</h4>
+                        <div className="flex items-center gap-4 mt-1">
+                          <span className="text-xs font-bold text-gray-500 uppercase flex items-center gap-1"><Truck size={14} /> {selectedDriver?.vehicleType}</span>
+                          <span className="text-xs font-bold text-gray-500 uppercase flex items-center gap-1"><CreditCard size={14} /> {selectedDriver?.plate}</span>
+                          <span className="bg-bordeaux/10 text-bordeaux px-2 py-0.5 rounded text-[10px] font-black">{selectedDriver?.type}</span>
+                        </div>
+                      </div>
                     </div>
-                  ))}
-                </div>
-              </div>
-            </div>
+                    <button 
+                      onClick={() => setSelectionStep(1)}
+                      className="flex items-center gap-2 text-bordeaux font-black text-[10px] uppercase tracking-widest hover:underline"
+                    >
+                      <RefreshCcw size={14} /> Trocar Motorista
+                    </button>
+                  </div>
 
-            {/* Footer */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                    {/* Lado Esquerdo: Valores */}
+                    <div className="space-y-8">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Valor do Frete Motorista (R$)</label>
+                          <div className="relative">
+                            <DollarSign className="absolute left-4 top-1/2 -translate-y-1/2 text-bordeaux" size={18} />
+                            <input 
+                              type="number" 
+                              value={freightValue}
+                              onChange={(e) => setFreightValue(Number(e.target.value))}
+                              className="w-full pl-12 pr-6 py-4 bg-gray-50 border border-gray-100 rounded-2xl font-black text-lg outline-none focus:ring-2 focus:ring-bordeaux/20 transition-all"
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Adiantamento (R$)</label>
+                          <div className="relative">
+                            <DollarSign className="absolute left-4 top-1/2 -translate-y-1/2 text-amber-500" size={18} />
+                            <input 
+                              type="number" 
+                              value={advanceValue}
+                              onChange={(e) => setAdvanceValue(Number(e.target.value))}
+                              className="w-full pl-12 pr-6 py-4 bg-gray-50 border border-gray-100 rounded-2xl font-black text-lg outline-none focus:ring-2 focus:ring-amber-500/20 transition-all"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {selectedDriver?.type === 'PF' && (
+                        <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100 space-y-4">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="bg-bordeaux/10 p-2 rounded-lg text-bordeaux">
+                                <Scale size={20} />
+                              </div>
+                              <div>
+                                <h5 className="font-black text-gray-800 text-sm uppercase tracking-tight">Retenção de Impostos (11,65%)</h5>
+                                <p className="text-[10px] font-bold text-gray-400 uppercase">Obrigatório para contratação de Pessoa Física</p>
+                              </div>
+                            </div>
+                            <label className="relative inline-flex items-center cursor-pointer">
+                              <input 
+                                type="checkbox" 
+                                checked={retentionAccepted}
+                                onChange={(e) => setRetentionAccepted(e.target.checked)}
+                                className="sr-only peer" 
+                              />
+                              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bordeaux"></div>
+                            </label>
+                          </div>
+
+                          {retentionAccepted ? (
+                            <div className="flex items-center justify-between bg-white p-4 rounded-2xl border border-gray-100">
+                              <span className="text-xs font-bold text-gray-500 uppercase">Valor da Retenção</span>
+                              <span className="font-black text-bordeaux">R$ {retentionValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-3 bg-amber-50 p-4 rounded-2xl border border-amber-100 text-amber-700">
+                              <AlertCircle size={20} />
+                              <p className="text-[10px] font-black uppercase leading-tight">Atenção: Sem retenção, o custo do imposto será somado ao custo total da operação.</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Despesas Extras */}
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <h5 className="text-sm font-black text-gray-800 uppercase tracking-widest flex items-center gap-2">
+                            <Receipt size={18} className="text-bordeaux" /> Despesas Extras
+                          </h5>
+                          <button 
+                            onClick={addExpense}
+                            className="text-bordeaux hover:bg-bordeaux/5 p-2 rounded-lg transition-all"
+                          >
+                            <PlusCircle size={20} />
+                          </button>
+                        </div>
+                        
+                        <div className="space-y-3">
+                          {extraExpenses.map((expense, idx) => (
+                            <div key={idx} className="flex gap-4 animate-in slide-in-from-top-2">
+                              <input 
+                                placeholder="Descrição (ex: Pedágio)"
+                                value={expense.description}
+                                onChange={(e) => updateExpense(idx, 'description', e.target.value)}
+                                className="flex-1 px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl font-bold text-xs outline-none focus:ring-2 focus:ring-bordeaux/20"
+                              />
+                              <input 
+                                type="number"
+                                placeholder="Valor"
+                                value={expense.value}
+                                onChange={(e) => updateExpense(idx, 'value', Number(e.target.value))}
+                                className="w-32 px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl font-bold text-xs outline-none focus:ring-2 focus:ring-bordeaux/20"
+                              />
+                              <button 
+                                onClick={() => removeExpense(idx)}
+                                className="text-gray-300 hover:text-red-500 transition-colors"
+                              >
+                                <MinusCircle size={20} />
+                              </button>
+                            </div>
+                          ))}
+                          {extraExpenses.length === 0 && (
+                            <p className="text-center py-4 text-[10px] font-bold text-gray-300 uppercase italic">Nenhuma despesa extra adicionada</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Lado Direito: Resumo Financeiro */}
+                    <div className="space-y-8">
+                      <div className="bg-gray-900 rounded-[32px] p-8 text-white space-y-8 shadow-2xl shadow-gray-900/20">
+                        <div className="flex items-center gap-3 border-b border-white/10 pb-6">
+                          <div className="bg-white/10 p-3 rounded-2xl">
+                            <Trophy size={24} className="text-amber-400" />
+                          </div>
+                          <div>
+                            <h5 className="text-xs font-black uppercase tracking-widest opacity-50">Resumo da Programação</h5>
+                            <p className="text-lg font-black uppercase tracking-tight">Viagem #{programmingLoad.id}</p>
+                          </div>
+                        </div>
+
+                        <div className="space-y-4">
+                          <div className="flex justify-between items-center text-sm">
+                            <span className="font-bold opacity-60 uppercase tracking-widest text-[10px]">Custo Total da Operação</span>
+                            <span className="font-black">R$ {totalCusto.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-sm">
+                            <span className="font-bold opacity-60 uppercase tracking-widest text-[10px]">Adiantamento Programado</span>
+                            <span className="font-black text-amber-400">- R$ {advanceValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                          </div>
+                          <div className="pt-4 border-t border-white/10 flex justify-between items-end">
+                            <div>
+                              <p className="text-[10px] font-black uppercase tracking-widest opacity-50 mb-1">Saldo Final a Pagar</p>
+                              <p className="text-3xl font-black text-emerald-400">R$ {saldoFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-[10px] font-black uppercase tracking-widest opacity-50 mb-1">Bonificação Comercial</p>
+                              <div className={`px-3 py-1 rounded-lg font-black text-xs inline-block ${bonusIndex <= 60 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+                                {bonusIndex.toFixed(1)}% {bonusIndex <= 60 ? '— DENTRO DA META' : '— ACIMA DA META'}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="bg-amber-50 p-6 rounded-3xl border border-amber-100 flex items-start gap-4">
+                        <div className="bg-amber-100 p-2 rounded-xl text-amber-600">
+                          <Info size={20} />
+                        </div>
+                        <div className="space-y-1">
+                          <h6 className="text-xs font-black text-amber-800 uppercase tracking-tight">Atenção na Efetivação</h6>
+                          <p className="text-[10px] font-bold text-amber-700/70 leading-relaxed uppercase">
+                            Ao efetivar, o status da carga mudará para <span className="font-black text-amber-800">EM TRÂNSITO</span>. 
+                            O motorista será notificado e o financeiro receberá a programação para pagamento do adiantamento.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Footer */}
             <div className="p-8 bg-gray-50 border-t border-gray-100 flex justify-end gap-4">
               <button 
                 onClick={() => setProgrammingLoad(null)} 
@@ -176,12 +780,14 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
               >
                 Cancelar
               </button>
-              <button 
-                disabled
-                className="px-14 py-4 bg-gray-200 text-gray-400 font-black rounded-2xl uppercase text-xs tracking-widest cursor-not-allowed"
-              >
-                Confirmar Programação
-              </button>
+              {selectionStep === 2 && (
+                <button 
+                  onClick={handleEfetivar}
+                  className="px-14 py-4 bg-bordeaux text-white font-black rounded-2xl uppercase text-xs tracking-widest shadow-xl shadow-bordeaux/20 hover:scale-105 transition-all flex items-center gap-3"
+                >
+                  <CheckCircle size={18} /> Efetivar Programação
+                </button>
+              )}
             </div>
           </div>
         </div>

@@ -5,7 +5,8 @@ import {
   MapPin, X, Users, Package, ShieldAlert, MapPinned, Layers, FileSearch,
   Paperclip, Trash2, Eye, FileUp, ArrowUpRight, DollarSign, AlertTriangle,
   Receipt, FileCheck, TrendingUp, MinusCircle, Truck, Calendar, Layout,
-  Copy, ArrowRightLeft, Sparkles, History, Navigation, Trophy, UserCheck
+  Copy, ArrowRightLeft, Sparkles, History, Navigation, Trophy, UserCheck,
+  Building2
 } from 'lucide-react';
 import { Load, Client, LoadStatus, Driver, useCompany } from '../../App';
 
@@ -41,6 +42,26 @@ const CommercialModule: React.FC<CommercialModuleProps> = ({ loads, addLoad, upd
   // Form States
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [editingLoadId, setEditingLoadId] = useState<string | null>(null);
+
+  // Radar de Leads States
+  const [radarFilters, setRadarFilters] = useState({ segment: '', city: '', radius: '50' });
+  const [isSearchingLeads, setIsSearchingLeads] = useState(false);
+  const [radarResults, setRadarResults] = useState<any[]>([]);
+
+  const simulateSearchLeads = () => {
+    setIsSearchingLeads(true);
+    // Simulação de delay de IA
+    setTimeout(() => {
+      setRadarResults([
+        { id: 'L1', name: 'Indústria de Alimentos Sabor Real', cnpj: '12.345.678/0001-90', phone: '(11) 3344-5566', segment: 'Alimentos', city: 'São Paulo/SP' },
+        { id: 'L2', name: 'Logística Expressa TransGlobal', cnpj: '98.765.432/0001-10', phone: '(21) 2233-4455', segment: 'Logística', city: 'Rio de Janeiro/RJ' },
+        { id: 'L3', name: 'Distribuidora Fênix de Bebidas', cnpj: '45.678.901/0001-22', phone: '(31) 3322-1100', segment: 'Bebidas', city: 'Belo Horizonte/MG' },
+        { id: 'L4', name: 'Metalúrgica Aço Forte Ltda', cnpj: '11.222.333/0001-44', phone: '(41) 3344-9988', segment: 'Metalurgia', city: 'Curitiba/PR' },
+        { id: 'L5', name: 'Cooperativa Agrícola Grão de Ouro', cnpj: '55.444.333/0001-55', phone: '(65) 3366-7788', segment: 'Agronegócio', city: 'Cuiabá/MT' },
+      ]);
+      setIsSearchingLeads(false);
+    }, 1500);
+  };
 
   const [formData, setFormData] = useState({
     origin: { name: '', cnpj: '', street: '', number: '', neighborhood: '', city: '', state: '', zip: '', contact: '', phone: '' },
@@ -243,6 +264,121 @@ const CommercialModule: React.FC<CommercialModuleProps> = ({ loads, addLoad, upd
                   )}
                 </tbody>
               </table>
+            </div>
+          </div>
+        ) : activeTab === 'Radar de Leads' ? (
+          <div className="space-y-8 animate-in fade-in duration-500">
+            {/* Filtros de Prospecção */}
+            <div className="bg-white p-8 rounded-[32px] border border-gray-100 shadow-sm space-y-6">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="bg-bordeaux/10 p-2 rounded-xl"><Sparkles size={20} className="text-bordeaux" /></div>
+                <h4 className="text-sm font-black text-gray-800 uppercase tracking-tight">Radar de Leads Inteligente (IA)</h4>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Segmento</label>
+                  <select 
+                    className="w-full px-5 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl font-black text-xs outline-none focus:ring-2 focus:ring-bordeaux/20"
+                    value={radarFilters.segment}
+                    onChange={(e) => setRadarFilters({...radarFilters, segment: e.target.value})}
+                  >
+                    <option value="">Todos os Segmentos</option>
+                    <option value="Alimentos">Alimentos</option>
+                    <option value="Agronegócio">Agronegócio</option>
+                    <option value="Indústria">Indústria</option>
+                    <option value="Logística">Logística</option>
+                    <option value="Varejo">Varejo</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Cidade / UF</label>
+                  <input 
+                    placeholder="Ex: São Paulo/SP"
+                    className="w-full px-5 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl font-black text-xs outline-none focus:ring-2 focus:ring-bordeaux/20"
+                    value={radarFilters.city}
+                    onChange={(e) => setRadarFilters({...radarFilters, city: e.target.value})}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Raio de Atuação (km)</label>
+                  <select 
+                    className="w-full px-5 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl font-black text-xs outline-none focus:ring-2 focus:ring-bordeaux/20"
+                    value={radarFilters.radius}
+                    onChange={(e) => setRadarFilters({...radarFilters, radius: e.target.value})}
+                  >
+                    <option value="10">Até 10 km</option>
+                    <option value="50">Até 50 km</option>
+                    <option value="100">Até 100 km</option>
+                    <option value="500">Até 500 km</option>
+                  </select>
+                </div>
+                <div className="flex items-end">
+                  <button 
+                    onClick={simulateSearchLeads}
+                    disabled={isSearchingLeads}
+                    className="w-full bg-bordeaux text-white px-6 py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-bordeaux/20 hover:scale-[1.02] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {isSearchingLeads ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                        Processando...
+                      </>
+                    ) : (
+                      <>
+                        <Search size={16} /> Buscar Leads
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Resultados */}
+            <div className="grid grid-cols-1 gap-4">
+              {radarResults.length > 0 ? (
+                radarResults.map((lead) => (
+                  <div key={lead.id} className="bg-white p-6 rounded-[32px] border border-gray-100 shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row items-center justify-between gap-6 group">
+                    <div className="flex items-center gap-5 flex-1">
+                      <div className="bg-bordeaux/5 p-4 rounded-2xl group-hover:bg-bordeaux group-hover:text-white transition-all">
+                        <Building2 size={24} />
+                      </div>
+                      <div className="space-y-1">
+                        <h5 className="font-black text-gray-800 text-base leading-tight">{lead.name}</h5>
+                        <div className="flex flex-wrap gap-4">
+                          <span className="text-[10px] font-bold text-gray-400 uppercase flex items-center gap-1">
+                             <FileSearch size={12} className="text-bordeaux" /> {lead.cnpj}
+                          </span>
+                          <span className="text-[10px] font-bold text-gray-400 uppercase flex items-center gap-1">
+                             <Truck size={12} className="text-bordeaux" /> {lead.segment}
+                          </span>
+                          <span className="text-[10px] font-bold text-gray-400 uppercase flex items-center gap-1">
+                             <MapPin size={12} className="text-bordeaux" /> {lead.city}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-6 w-full md:w-auto">
+                      <div className="text-right hidden md:block">
+                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Contato Direto</p>
+                        <p className="font-black text-gray-700 text-sm">{lead.phone}</p>
+                      </div>
+                      <button className="flex-1 md:flex-none bg-emerald-50 text-emerald-600 px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-600 hover:text-white transition-all flex items-center justify-center gap-2 border border-emerald-100">
+                        <Plus size={14} /> Importar para CRM
+                      </button>
+                    </div>
+                  </div>
+                ))
+              ) : !isSearchingLeads && (
+                <div className="flex flex-col items-center justify-center py-20 text-center space-y-4 opacity-30">
+                  <Sparkles size={64} className="text-bordeaux" />
+                  <div className="space-y-1">
+                    <p className="text-lg font-black text-bordeaux uppercase tracking-widest">Radar de Leads Inativo</p>
+                    <p className="text-xs font-bold text-gray-500 italic">Utilize os filtros acima para prospectar novos clientes com nossa IA.</p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         ) : (
