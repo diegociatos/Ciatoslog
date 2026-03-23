@@ -6,17 +6,19 @@ import {
   DollarSign, AlertCircle, ShieldCheck, ShieldAlert, ChevronRight,
   Flag, FileText, Weight, Layers, ArrowRightLeft, Trophy, History,
   MinusCircle, PlusCircle, Receipt, Scale, Package, Info, Edit3, RefreshCcw,
-  Building2, Target, ClipboardList, Phone, UserCheck, Briefcase, HardDrive
+  Building2, Target, ClipboardList, Phone, UserCheck, Briefcase, HardDrive, Paperclip
 } from 'lucide-react';
-import { Load, Driver, useCompany } from '../../App';
+import { Load, Driver, useCompany, Transaction, User as UserType } from '../../App';
 
 interface ProgrammingModuleProps {
   loads: Load[];
   updateLoad: (updatedLoad: Load) => void;
   drivers: Driver[];
+  addTransaction: (transaction: Omit<Transaction, 'id' | 'ownerId'>, specificOwnerId?: 'BD' | 'LOG') => void;
+  currentUser: UserType;
 }
 
-const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad, drivers }) => {
+const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad, drivers, addTransaction, currentUser }) => {
   const { activeCompany, getCompanyBadge } = useCompany();
   const [activeTab, setActiveTab] = useState<'Aguardando' | 'EmTransito'>('Aguardando');
   const [programmingLoad, setProgrammingLoad] = useState<Load | null>(null);
@@ -25,7 +27,8 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
   const [selectionStep, setSelectionStep] = useState<1 | 2>(1);
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
   const [freightValue, setFreightValue] = useState<number>(0);
-  const [retentionAccepted, setRetentionAccepted] = useState<boolean>(true);
+  const [hasTaxes, setHasTaxes] = useState<boolean>(false);
+  const [taxesValue, setTaxesValue] = useState<number>(0);
   const [extraExpenses, setExtraExpenses] = useState<{description: string, value: number}[]>([]);
   const [advanceValue, setAdvanceValue] = useState<number>(0);
 
@@ -44,6 +47,10 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
 
   const [searchTerm, setSearchTerm] = useState('');
 
+  // Estados de Anexo de Documentos
+  const [uploadingDocsLoad, setUploadingDocsLoad] = useState<Load | null>(null);
+  const [docUrls, setDocUrls] = useState({ cte: '', ciot: '', contract: '' });
+
   const allDrivers = useMemo(() => {
     const combined = [...drivers, ...localDrivers];
     if (!searchTerm) return combined;
@@ -61,7 +68,8 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
       setSelectionStep(1);
       setSelectedDriver(null);
       setFreightValue(0);
-      setRetentionAccepted(true);
+      setHasTaxes(false);
+      setTaxesValue(0);
       setExtraExpenses([]);
       setAdvanceValue(0);
       setIsRegisteringDriver(false);
@@ -124,10 +132,9 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
     setExtraExpenses(extraExpenses.filter((_, i) => i !== index));
   };
 
-  const retentionValue = freightValue * 0.1165;
   const extraExpensesSum = extraExpenses.reduce((acc, curr) => acc + curr.value, 0);
-  const totalCusto = freightValue + (!retentionAccepted && selectedDriver?.type === 'PF' ? retentionValue : 0) + extraExpensesSum;
-  const saldoFinal = freightValue + extraExpensesSum - advanceValue;
+  const totalCusto = freightValue + (!hasTaxes ? taxesValue : 0) + extraExpensesSum;
+  const saldoFinal = freightValue + extraExpensesSum - advanceValue - (hasTaxes ? taxesValue : 0);
   const bonusIndex = (programmingLoad?.value && programmingLoad.value > 0) ? (totalCusto / programmingLoad.value) * 100 : 0;
 
   const handleEfetivar = () => {
@@ -135,20 +142,64 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
 
     const updatedLoad: Load = {
       ...programmingLoad,
-      status: 'EM TRÂNSITO',
+      status: 'AGUARDANDO EMISSÃO',
       driverId: selectedDriver.id,
       driver: selectedDriver.name,
       plate: selectedDriver.plate,
       cost: totalCusto,
       advance: advanceValue,
-      balance: saldoFinal
+      balance: saldoFinal,
+      hasTaxes: hasTaxes,
+      taxesRetained: hasTaxes ? taxesValue : 0
     };
 
     updateLoad(updatedLoad);
+
+    // Lançamento no contas a pagar (Ordem de Pagamento)
+    addTransaction({
+      date: new Date().toISOString().split('T')[0],
+      desc: `Pagamento Motorista - Carga #${programmingLoad.id} (${selectedDriver.name})`,
+      type: 'SAIDA',
+      value: saldoFinal + advanceValue, // Valor total pago ao motorista
+      cat: '5', // ID for 'Carreteiro'
+      status: 'PENDENTE'
+    }, programmingLoad.ownerId);
+
+    if (taxesValue > 0) {
+      addTransaction({
+        date: new Date().toISOString().split('T')[0],
+        desc: `Tributos - Carga #${programmingLoad.id} (${selectedDriver.name})`,
+        type: 'SAIDA',
+        value: taxesValue,
+        cat: '9', // ID for 'Impostos'
+        status: 'PENDENTE'
+      }, programmingLoad.ownerId);
+    }
+
     setProgrammingLoad(null);
   };
 
-  const waitingLoads = loads.filter(l => l.status === 'AGUARDANDO PROGRAMAÇÃO');
+  const waitingLoads = loads.filter(l => {
+    if (l.status !== 'AGUARDANDO PROGRAMAÇÃO') return false;
+    if (currentUser.role === 'Comercial') {
+      return l.assignedProgrammer === 'Comercial' && l.commercialRep === currentUser.name;
+    }
+    if (currentUser.role === 'Operacional') {
+      return l.assignedProgrammer !== 'Comercial';
+    }
+    return true; // Admin/Financeiro vê tudo
+  });
+
+  const inTransitLoads = loads.filter(l => {
+    if (l.status !== 'EM TRÂNSITO') return false;
+    if (currentUser.role === 'Comercial') {
+      return l.assignedProgrammer === 'Comercial' && l.commercialRep === currentUser.name;
+    }
+    if (currentUser.role === 'Operacional') {
+      return l.assignedProgrammer !== 'Comercial';
+    }
+    return true;
+  });
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-10" style={{ fontFamily: 'Book Antiqua, serif' }}>
@@ -198,7 +249,59 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
             </tbody>
           </table>
         ) : (
-          <div className="p-20 text-center italic text-gray-300 font-bold">Monitoramento multi-empresa em tempo real...</div>
+          <table className="w-full text-left">
+            <thead className="bg-gray-50 text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">
+              <tr>
+                <th className="px-8 py-6">ID / Carga / Empresa</th>
+                <th className="px-8 py-6">Motorista / Placa</th>
+                <th className="px-8 py-6">Documentos Anexados</th>
+                <th className="px-8 py-6 text-right">Ação</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {inTransitLoads.map(load => (
+                <tr key={load.id} className="hover:bg-gray-50/50 transition-colors">
+                  <td className="px-8 py-6 font-black text-gray-800">
+                    <div className="flex items-center">
+                      #{load.id} {getCompanyBadge(load.ownerId)}
+                    </div>
+                    <span className="text-[10px] text-gray-400 uppercase block mt-1">{load.merchandise}</span>
+                  </td>
+                  <td className="px-8 py-6 text-sm font-black">
+                    {load.driver}
+                    <span className="text-[10px] text-gray-400 uppercase block mt-1">{load.plate}</span>
+                  </td>
+                  <td className="px-8 py-6">
+                    <div className="flex gap-2">
+                      <span className={`px-2 py-1 rounded text-[9px] font-black uppercase ${load.cteUrl ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-400'}`}>CTe</span>
+                      <span className={`px-2 py-1 rounded text-[9px] font-black uppercase ${load.ciotUrl ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-400'}`}>CIOT</span>
+                      <span className={`px-2 py-1 rounded text-[9px] font-black uppercase ${load.contractUrl ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-400'}`}>Contrato</span>
+                    </div>
+                  </td>
+                  <td className="px-8 py-6 text-right">
+                    <button 
+                      onClick={() => {
+                        setUploadingDocsLoad(load);
+                        setDocUrls({
+                          cte: load.cteUrl || '',
+                          ciot: load.ciotUrl || '',
+                          contract: load.contractUrl || ''
+                        });
+                      }}
+                      className="bg-gray-100 text-gray-600 px-4 py-2 rounded-xl font-black text-[10px] uppercase shadow-sm hover:bg-gray-200 transition-all flex items-center gap-2 ml-auto"
+                    >
+                      <Paperclip size={14} /> Anexar Docs
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {inTransitLoads.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="p-20 text-center italic text-gray-300 font-bold">Nenhuma carga em trânsito no momento...</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         )}
       </div>
 
@@ -634,42 +737,54 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
                         </div>
                       </div>
 
-                      {selectedDriver?.type === 'PF' && (
-                        <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100 space-y-4">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <div className="bg-bordeaux/10 p-2 rounded-lg text-bordeaux">
-                                <Scale size={20} />
-                              </div>
-                              <div>
-                                <h5 className="font-black text-gray-800 text-sm uppercase tracking-tight">Retenção de Impostos (11,65%)</h5>
-                                <p className="text-[10px] font-bold text-gray-400 uppercase">Obrigatório para contratação de Pessoa Física</p>
-                              </div>
+                      <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100 space-y-4">
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-3">
+                            <div className="bg-bordeaux/10 p-2 rounded-lg text-bordeaux">
+                              <Scale size={20} />
                             </div>
+                            <div>
+                              <h5 className="font-black text-gray-800 text-sm uppercase tracking-tight">Tributos</h5>
+                              <p className="text-[10px] font-bold text-gray-400 uppercase">Valor dos impostos da operação</p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-4">
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Valor dos Tributos (R$)</label>
+                            <div className="relative">
+                              <DollarSign className="absolute left-4 top-1/2 -translate-y-1/2 text-bordeaux" size={18} />
+                              <input 
+                                type="number" 
+                                value={taxesValue}
+                                onChange={(e) => setTaxesValue(Number(e.target.value))}
+                                className="w-full pl-12 pr-6 py-4 bg-white border border-gray-100 rounded-2xl font-black text-lg outline-none focus:ring-2 focus:ring-bordeaux/20 transition-all"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between bg-white p-4 rounded-2xl border border-gray-100">
+                            <span className="text-xs font-black text-gray-600 uppercase tracking-widest">Reter do Motorista?</span>
                             <label className="relative inline-flex items-center cursor-pointer">
                               <input 
                                 type="checkbox" 
-                                checked={retentionAccepted}
-                                onChange={(e) => setRetentionAccepted(e.target.checked)}
+                                checked={hasTaxes}
+                                onChange={(e) => setHasTaxes(e.target.checked)}
                                 className="sr-only peer" 
                               />
                               <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bordeaux"></div>
                             </label>
                           </div>
-
-                          {retentionAccepted ? (
-                            <div className="flex items-center justify-between bg-white p-4 rounded-2xl border border-gray-100">
-                              <span className="text-xs font-bold text-gray-500 uppercase">Valor da Retenção</span>
-                              <span className="font-black text-bordeaux">R$ {retentionValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-3 bg-amber-50 p-4 rounded-2xl border border-amber-100 text-amber-700">
-                              <AlertCircle size={20} />
-                              <p className="text-[10px] font-black uppercase leading-tight">Atenção: Sem retenção, o custo do imposto será somado ao custo total da operação.</p>
-                            </div>
-                          )}
                         </div>
-                      )}
+
+                        {!hasTaxes && taxesValue > 0 && (
+                          <div className="flex items-center gap-3 bg-amber-50 p-4 rounded-2xl border border-amber-100 text-amber-700 animate-in fade-in">
+                            <AlertCircle size={20} className="shrink-0" />
+                            <p className="text-[10px] font-black uppercase leading-tight">Atenção: Como não há retenção, o valor de {taxesValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})} será acrescido ao custo da carga para a empresa.</p>
+                          </div>
+                        )}
+                      </div>
 
                       {/* Despesas Extras */}
                       <div className="space-y-4">
@@ -760,7 +875,7 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
                         <div className="space-y-1">
                           <h6 className="text-xs font-black text-amber-800 uppercase tracking-tight">Atenção na Efetivação</h6>
                           <p className="text-[10px] font-bold text-amber-700/70 leading-relaxed uppercase">
-                            Ao efetivar, o status da carga mudará para <span className="font-black text-amber-800">EM TRÂNSITO</span>. 
+                            Ao efetivar, o status da carga mudará para <span className="font-black text-amber-800">AGUARDANDO EMISSÃO</span>. 
                             O motorista será notificado e o financeiro receberá a programação para pagamento do adiantamento.
                           </p>
                         </div>
@@ -788,6 +903,88 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
                   <CheckCircle size={18} /> Efetivar Programação
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal de Anexo de Documentos */}
+      {uploadingDocsLoad && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-md p-4 animate-in fade-in">
+          <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col animate-in zoom-in-95">
+            <div className="bg-bordeaux text-white p-8 flex justify-between items-center">
+              <div className="flex items-center gap-6">
+                <div className="bg-white/20 p-4 rounded-2xl shadow-inner">
+                  <Paperclip size={32} />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-black uppercase tracking-tight">Anexar Documentos</h3>
+                  <p className="text-xs font-bold opacity-70 uppercase tracking-widest">Carga #{uploadingDocsLoad.id}</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setUploadingDocsLoad(null)} 
+                className="text-white/50 hover:text-white transition-colors bg-white/10 p-2 rounded-xl"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-8 space-y-6">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">URL do CTe</label>
+                  <input 
+                    type="text" 
+                    placeholder="https://..."
+                    value={docUrls.cte}
+                    onChange={(e) => setDocUrls({...docUrls, cte: e.target.value})}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-bordeaux/20"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">URL do CIOT</label>
+                  <input 
+                    type="text" 
+                    placeholder="https://..."
+                    value={docUrls.ciot}
+                    onChange={(e) => setDocUrls({...docUrls, ciot: e.target.value})}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-bordeaux/20"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">URL do Contrato de Frete</label>
+                  <input 
+                    type="text" 
+                    placeholder="https://..."
+                    value={docUrls.contract}
+                    onChange={(e) => setDocUrls({...docUrls, contract: e.target.value})}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-bordeaux/20"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="p-8 bg-gray-50 border-t border-gray-100 flex justify-end gap-4">
+              <button 
+                onClick={() => setUploadingDocsLoad(null)} 
+                className="px-8 py-3 font-black text-gray-400 uppercase text-xs tracking-widest hover:text-gray-600 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={() => {
+                  updateLoad({
+                    ...uploadingDocsLoad,
+                    cteUrl: docUrls.cte,
+                    ciotUrl: docUrls.ciot,
+                    contractUrl: docUrls.contract
+                  });
+                  setUploadingDocsLoad(null);
+                }}
+                className="px-8 py-3 bg-bordeaux text-white font-black rounded-xl uppercase text-xs tracking-widest shadow-lg shadow-bordeaux/20 hover:scale-105 transition-all flex items-center gap-2"
+              >
+                <CheckCircle size={16} /> Salvar Documentos
+              </button>
             </div>
           </div>
         </div>

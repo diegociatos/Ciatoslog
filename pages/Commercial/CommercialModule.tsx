@@ -17,6 +17,7 @@ interface CommercialModuleProps {
   deleteLoad: (loadId: string) => void;
   clients: Client[];
   drivers: Driver[];
+  goToProgramming: () => void;
 }
 
 type MainTab = 'Minhas Cargas' | 'Kanban' | 'Radar de Leads';
@@ -28,7 +29,7 @@ interface ExtraExpense {
   value: number;
 }
 
-const CommercialModule: React.FC<CommercialModuleProps> = ({ loads, addLoad, updateLoad, deleteLoad, clients, drivers }) => {
+const CommercialModule: React.FC<CommercialModuleProps> = ({ loads, addLoad, updateLoad, deleteLoad, clients, drivers, goToProgramming }) => {
   const { activeCompany, getCompanyBadge } = useCompany();
   const [activeTab, setActiveTab] = useState<MainTab>('Kanban');
   const [showForm, setShowForm] = useState(false);
@@ -102,7 +103,6 @@ const CommercialModule: React.FC<CommercialModuleProps> = ({ loads, addLoad, upd
     if (!selectedClient) return;
     const selectedDriver = drivers.find(d => d.id === formData.finance.selectedDriverId);
     let targetStatus: LoadStatus = 'AGUARDANDO PROGRAMAÇÃO';
-    if (formData.programming.choice === 'Comercial') targetStatus = 'EM TRÂNSITO';
 
     const payload = {
       customer: selectedClient.name,
@@ -112,6 +112,7 @@ const CommercialModule: React.FC<CommercialModuleProps> = ({ loads, addLoad, upd
       destination: `${formData.destination.city}/${formData.destination.state}`,
       vehicleTypeRequired: selectedDriver?.vehicleType || 'Truck',
       commercialRep: selectedClient.commercialRep,
+      assignedProgrammer: formData.programming.choice === 'Comercial' ? 'Comercial' : 'Operacional',
       driverId: selectedDriver?.id,
       driver: selectedDriver?.name,
       plate: selectedDriver?.plate,
@@ -126,6 +127,11 @@ const CommercialModule: React.FC<CommercialModuleProps> = ({ loads, addLoad, upd
       addLoad(payload);
     }
     setShowForm(false);
+    
+    // Se o comercial definiu que ele mesmo vai programar, redireciona para a aba de programação
+    if (formData.programming.choice === 'Comercial') {
+      goToProgramming();
+    }
   };
 
   return (

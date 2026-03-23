@@ -17,9 +17,10 @@ import {
   Layers,
   Percent,
   Target,
-  X
+  X,
+  FileSpreadsheet
 } from 'lucide-react';
-import { VehicleType, RouteConfig } from '../../App';
+import { VehicleType, RouteConfig, BankAccount, DRECategory } from '../../App';
 
 interface SettingsModuleProps {
   vehicleTypes: VehicleType[];
@@ -28,6 +29,10 @@ interface SettingsModuleProps {
   setRoutes: React.Dispatch<React.SetStateAction<RouteConfig[]>>;
   segments: string[];
   setSegments: React.Dispatch<React.SetStateAction<string[]>>;
+  bankAccounts: BankAccount[];
+  setBankAccounts: React.Dispatch<React.SetStateAction<BankAccount[]>>;
+  dreCategories: DRECategory[];
+  setDreCategories: React.Dispatch<React.SetStateAction<DRECategory[]>>;
 }
 
 const SettingsModule: React.FC<SettingsModuleProps> = ({ 
@@ -36,9 +41,13 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({
   routes, 
   setRoutes,
   segments,
-  setSegments 
+  setSegments,
+  bankAccounts,
+  setBankAccounts,
+  dreCategories,
+  setDreCategories
 }) => {
-  const [activeTab, setActiveTab] = useState<'Veiculos' | 'Rotas' | 'Segmentos' | 'Agenciamento' | 'Usuarios'>('Veiculos');
+  const [activeTab, setActiveTab] = useState<'Veiculos' | 'Rotas' | 'Segmentos' | 'Agenciamento' | 'Usuarios' | 'Bancos' | 'DRE'>('Veiculos');
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-10">
@@ -60,7 +69,9 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({
           { id: 'Rotas', label: 'Rotas Operacionais', icon: <Route size={18} /> },
           { id: 'Segmentos', label: 'Segmentos de Mercado', icon: <Target size={18} /> },
           { id: 'Agenciamento', label: 'Regras de Agenciamento', icon: <Percent size={18} /> },
-          { id: 'Usuarios', label: 'Segurança & Acessos', icon: <Users size={18} /> }
+          { id: 'Usuarios', label: 'Segurança & Acessos', icon: <Users size={18} /> },
+          { id: 'Bancos', label: 'Bancos e Caixas', icon: <DollarSign size={18} /> },
+          { id: 'DRE', label: 'Categorias DRE', icon: <Layers size={18} /> }
         ].map((tab: any) => (
           <button
             key={tab.id}
@@ -83,6 +94,313 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({
         {activeTab === 'Segmentos' && <SegmentManager segments={segments} setSegments={setSegments} />}
         {activeTab === 'Agenciamento' && <AgencyManager />}
         {activeTab === 'Usuarios' && <UserManager />}
+        {activeTab === 'Bancos' && <BankManager bankAccounts={bankAccounts} setBankAccounts={setBankAccounts} />}
+        {activeTab === 'DRE' && <DRECategoryManager dreCategories={dreCategories} setDreCategories={setDreCategories} />}
+      </div>
+    </div>
+  );
+};
+
+// --- Sub-componentes de Bancos e DRE ---
+const BankManager = ({ bankAccounts, setBankAccounts }: { bankAccounts: BankAccount[], setBankAccounts: React.Dispatch<React.SetStateAction<BankAccount[]>> }) => {
+  const [newBank, setNewBank] = useState({ name: '', type: 'BANCO' as 'BANCO' | 'CAIXA', initialBalance: 0 });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editBank, setEditBank] = useState({ name: '', type: 'BANCO' as 'BANCO' | 'CAIXA' });
+
+  const handleAdd = () => {
+    if (!newBank.name.trim()) return;
+    setBankAccounts([...bankAccounts, { ...newBank, id: Date.now().toString() }]);
+    setNewBank({ name: '', type: 'BANCO', initialBalance: 0 });
+  };
+
+  const handleEdit = (bank: BankAccount) => {
+    setEditingId(bank.id);
+    setEditBank({ name: bank.name, type: bank.type });
+  };
+
+  const handleSaveEdit = () => {
+    if (!editBank.name.trim() || !editingId) return;
+    setBankAccounts(bankAccounts.map(b => b.id === editingId ? { ...b, name: editBank.name, type: editBank.type } : b));
+    setEditingId(null);
+  };
+
+  const handleDelete = (id: string) => {
+    setBankAccounts(bankAccounts.filter(b => b.id !== id));
+  };
+
+  return (
+    <div className="space-y-8">
+      <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100">
+        <h3 className="text-lg font-black text-gray-800 uppercase tracking-tight mb-4">Novo Banco/Caixa</h3>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <input
+            type="text"
+            placeholder="Nome da Conta"
+            value={newBank.name}
+            onChange={(e) => setNewBank({ ...newBank, name: e.target.value })}
+            className="col-span-2 px-4 py-3 rounded-xl border border-gray-200 outline-none focus:ring-2 focus:ring-bordeaux/20"
+          />
+          <select
+            value={newBank.type}
+            onChange={(e) => setNewBank({ ...newBank, type: e.target.value as 'BANCO' | 'CAIXA' })}
+            className="px-4 py-3 rounded-xl border border-gray-200 outline-none focus:ring-2 focus:ring-bordeaux/20"
+          >
+            <option value="BANCO">Banco</option>
+            <option value="CAIXA">Caixa Físico</option>
+          </select>
+          <button
+            onClick={handleAdd}
+            className="flex items-center justify-center gap-2 bg-bordeaux text-white px-6 py-3 rounded-xl font-bold hover:bg-bordeaux/90 transition-colors"
+          >
+            <Plus size={18} /> Adicionar
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {bankAccounts.map(bank => (
+          <div key={bank.id} className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex flex-col justify-between">
+            {editingId === bank.id ? (
+              <div className="space-y-4">
+                <input
+                  type="text"
+                  value={editBank.name}
+                  onChange={(e) => setEditBank({ ...editBank, name: e.target.value })}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 outline-none focus:ring-2 focus:ring-bordeaux/20"
+                />
+                <select
+                  value={editBank.type}
+                  onChange={(e) => setEditBank({ ...editBank, type: e.target.value as 'BANCO' | 'CAIXA' })}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 outline-none focus:ring-2 focus:ring-bordeaux/20"
+                >
+                  <option value="BANCO">Banco</option>
+                  <option value="CAIXA">Caixa Físico</option>
+                </select>
+                <div className="flex justify-end gap-2 mt-4">
+                  <button onClick={() => setEditingId(null)} className="p-2 text-gray-400 hover:text-gray-600 bg-gray-50 rounded-lg">
+                    <X size={18} />
+                  </button>
+                  <button onClick={handleSaveEdit} className="p-2 text-emerald-600 hover:text-emerald-700 bg-emerald-50 rounded-lg">
+                    <Save size={18} />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div>
+                  <div className="flex justify-between items-start mb-2">
+                    <h4 className="font-black text-gray-800 text-lg">{bank.name}</h4>
+                    <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-md ${bank.type === 'BANCO' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>
+                      {bank.type}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 mt-4">
+                  <button onClick={() => handleEdit(bank)} className="text-gray-400 hover:text-bordeaux p-2 bg-gray-50 rounded-lg">
+                    <Edit2 size={18} />
+                  </button>
+                  <button onClick={() => handleDelete(bank.id)} className="text-red-500 hover:text-red-700 p-2 bg-red-50 rounded-lg">
+                    <Trash2 size={18} />
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const DRECategoryManager = ({ dreCategories, setDreCategories }: { dreCategories: DRECategory[], setDreCategories: React.Dispatch<React.SetStateAction<DRECategory[]>> }) => {
+  const [newName, setNewName] = useState('');
+  const [newGroup, setNewGroup] = useState<DRECategory['group']>('RECEITA_BRUTA_CAIXA');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editGroup, setEditGroup] = useState<DRECategory['group']>('RECEITA_BRUTA_CAIXA');
+
+  const handleAdd = () => {
+    if (!newName.trim()) return;
+    setDreCategories([...dreCategories, { id: Date.now().toString(), name: newName, group: newGroup }]);
+    setNewName('');
+  };
+
+  const handleEdit = (cat: DRECategory) => {
+    setEditingId(cat.id);
+    setEditName(cat.name);
+    setEditGroup(cat.group);
+  };
+
+  const handleSaveEdit = () => {
+    if (!editName.trim() || !editingId) return;
+    setDreCategories(dreCategories.map(c => c.id === editingId ? { ...c, name: editName, group: editGroup } : c));
+    setEditingId(null);
+  };
+
+  const handleDelete = (id: string) => {
+    setDreCategories(dreCategories.filter(c => c.id !== id));
+  };
+
+  const groups = [
+    { id: 'RECEITA_BRUTA_COMPETENCIA', label: 'RECEITA OPERACIONAL POR COMPETÊNCIA' },
+    { id: 'RECEITA_BRUTA_CAIXA', label: 'RECEITA OPERACIONAL BRUTA' },
+    { id: 'TRIBUTOS', label: 'TRIBUTOS' },
+    { id: 'CUSTO_DIRETO_PESSOAL', label: 'CUSTO DIRETO PESSOAL' },
+    { id: 'CUSTO_DIRETO_OPERACIONAL', label: 'CUSTO DIRETO' },
+    { id: 'DESPESAS_COMERCIAIS', label: 'DESPESAS COMERCIAIS' },
+    { id: 'DESPESAS_ADMINISTRATIVAS', label: 'DESPESAS ADMINISTRATIVAS' },
+    { id: 'DESPESAS_FINANCEIRAS', label: 'DESPESAS FINANCEIRAS' },
+    { id: 'INVESTIMENTOS', label: 'INVESTIMENTOS' }
+  ];
+
+  const renderGroup = (groupId: string, label: string, styleClass: string) => {
+    const groupCats = dreCategories.filter(c => c.group === groupId);
+
+    return (
+      <React.Fragment key={groupId}>
+        <div className={`flex border-b border-gray-200 ${styleClass}`}>
+          <div className="flex-1 px-2 py-1.5 text-xs border-r border-gray-200 flex items-center font-bold">
+            {label}
+          </div>
+          <div className="w-32 flex-shrink-0 px-2 py-1.5 text-xs flex items-center justify-center font-bold">
+            -
+          </div>
+        </div>
+        
+        {groupCats.map((cat, index) => (
+          <div key={cat.id} className={`flex border-b border-gray-200 ${index % 2 === 0 ? 'bg-white text-black' : 'bg-gray-50 text-black'}`}>
+            <div className="flex-1 px-2 py-1.5 text-xs border-r border-gray-200 flex items-center">
+              {editingId === cat.id ? (
+                <div className="flex-1 flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="flex-1 px-2 py-1 rounded border border-gray-300 outline-none focus:ring-1 focus:ring-bordeaux/50 text-xs text-black"
+                    placeholder="Nome da Conta"
+                  />
+                  <select
+                    value={editGroup}
+                    onChange={(e) => setEditGroup(e.target.value as DRECategory['group'])}
+                    className="px-2 py-1 rounded border border-gray-300 outline-none focus:ring-1 focus:ring-bordeaux/50 text-xs text-black"
+                  >
+                    {groups.map(g => <option key={g.id} value={g.id}>{g.label}</option>)}
+                  </select>
+                </div>
+              ) : (
+                <span className="text-gray-800">{cat.name}</span>
+              )}
+            </div>
+            <div className="w-32 flex-shrink-0 px-2 py-1.5 text-xs flex items-center justify-center gap-2">
+              {editingId === cat.id ? (
+                <>
+                  <button onClick={handleSaveEdit} className="p-1 text-emerald-600 hover:text-emerald-700 bg-emerald-50 rounded">
+                    <Save size={14} />
+                  </button>
+                  <button onClick={() => setEditingId(null)} className="p-1 text-gray-400 hover:text-gray-600 bg-gray-100 rounded">
+                    <X size={14} />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button onClick={() => handleEdit(cat)} className="text-gray-400 hover:text-blue-600 p-1">
+                    <Edit2 size={14} />
+                  </button>
+                  <button onClick={() => handleDelete(cat.id)} className="text-gray-400 hover:text-red-600 p-1">
+                    <Trash2 size={14} />
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        ))}
+      </React.Fragment>
+    );
+  };
+
+  const renderCalculatedRow = (label: string, styleClass: string) => (
+    <div className={`flex border-b border-gray-200 ${styleClass}`}>
+      <div className="flex-1 px-2 py-1.5 text-xs border-r border-gray-200 flex items-center font-bold">
+        {label}
+      </div>
+      <div className="w-32 flex-shrink-0 px-2 py-1.5 text-xs flex items-center justify-center font-bold">
+        -
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-8">
+      <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+        <h3 className="text-lg font-bold text-gray-800 mb-4">Nova Conta DRE</h3>
+        <div className="flex gap-4">
+          <input
+            type="text"
+            placeholder="Nome da Conta (ex: Salário)"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            className="flex-1 px-4 py-2 rounded-lg border border-gray-300 outline-none focus:ring-2 focus:ring-bordeaux/20 text-sm"
+          />
+          <select
+            value={newGroup}
+            onChange={(e) => setNewGroup(e.target.value as DRECategory['group'])}
+            className="w-64 px-4 py-2 rounded-lg border border-gray-300 outline-none focus:ring-2 focus:ring-bordeaux/20 text-sm"
+          >
+            {groups.map(g => <option key={g.id} value={g.id}>{g.label}</option>)}
+          </select>
+          <button
+            onClick={handleAdd}
+            className="flex items-center justify-center gap-2 bg-bordeaux text-white px-6 py-2 rounded-lg font-bold hover:bg-bordeaux/90 transition-colors text-sm"
+          >
+            <Plus size={16} /> Adicionar
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-white border border-gray-200 shadow-sm overflow-hidden" style={{ fontFamily: 'Arial, sans-serif' }}>
+        <div className="p-4 bg-gray-100 border-b border-gray-200 flex items-center gap-3">
+          <FileSpreadsheet size={20} className="text-gray-700" />
+          <h3 className="text-lg font-bold text-gray-800">
+            Estrutura do DRE
+          </h3>
+        </div>
+        
+        <div className="flex flex-col">
+          {/* Header */}
+          <div className="flex bg-black text-white font-bold text-xs">
+            <div className="flex-1 px-2 py-2 border-r border-gray-700 flex items-center justify-center">
+              CONTA
+            </div>
+            <div className="w-32 flex-shrink-0 px-2 py-2 border-r border-gray-700 flex items-center justify-center text-center">
+              AÇÕES
+            </div>
+          </div>
+
+          {renderGroup('RECEITA_BRUTA_COMPETENCIA', 'RECEITA OPERACIONAL POR COMPETÊNCIA', 'bg-black text-white')}
+          {renderGroup('RECEITA_BRUTA_CAIXA', 'RECEITA OPERACIONAL BRUTA', 'bg-black text-white')}
+          {renderGroup('TRIBUTOS', 'TRIBUTOS', 'bg-[#c00000] text-white')}
+          
+          {renderCalculatedRow('RECEITA OPERACIONAL LÍQUIDA', 'bg-black text-white')}
+          
+          {renderCalculatedRow('CUSTO DIRETO TOTAL', 'bg-[#c00000] text-white')}
+          
+          {renderGroup('CUSTO_DIRETO_PESSOAL', 'CUSTO DIRETO PESSOAL', 'bg-[#c00000] text-white')}
+          {renderGroup('CUSTO_DIRETO_OPERACIONAL', 'CUSTO DIRETO', 'bg-[#c00000] text-white')}
+          
+          {renderCalculatedRow('LUCRO BRUTO', 'bg-black text-white')}
+          
+          {renderCalculatedRow('DESPESAS OPERACIONAIS', 'bg-[#c00000] text-white')}
+          
+          {renderGroup('DESPESAS_COMERCIAIS', 'DESPESAS COMERCIAIS', 'bg-white text-[#c00000]')}
+          {renderGroup('DESPESAS_ADMINISTRATIVAS', 'DESPESAS ADMINISTRATIVAS', 'bg-white text-[#c00000]')}
+          {renderGroup('DESPESAS_FINANCEIRAS', 'DESPESAS FINANCEIRAS', 'bg-white text-[#c00000]')}
+          
+          {renderCalculatedRow('LUCRO LÍQUIDO', 'bg-[#1f497d] text-white')}
+          
+          {renderGroup('INVESTIMENTOS', 'INVESTIMENTOS', 'bg-[#c00000] text-white')}
+          
+          {renderCalculatedRow('RESULTADO DO EXERCÍCIO', 'bg-[#1f497d] text-white')}
+        </div>
       </div>
     </div>
   );

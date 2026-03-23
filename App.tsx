@@ -15,7 +15,8 @@ import {
   Truck,
   Building2,
   Contact2,
-  Globe
+  Globe,
+  FileText
 } from 'lucide-react';
 import DashboardModule from './components/DashboardModule';
 import CommercialModule from './pages/Commercial/CommercialModule';
@@ -24,6 +25,12 @@ import ProgrammingModule from './pages/Programming/ProgrammingModule';
 import ClientsModule from './pages/Clients/ClientsModule';
 import DriversModule from './pages/Programming/DriversModule';
 import SettingsModule from './pages/Settings/SettingsModule';
+import UsersModule from './pages/Users/UsersModule';
+import CteModule from './pages/CTE/CteModule';
+import CteEmissionModule from './pages/CTE/CteEmissionModule';
+import CommercialDashboard from './pages/Commercial/CommercialDashboard';
+import ProgrammerDashboard from './pages/Programming/ProgrammerDashboard';
+import FinancialDashboard from './pages/Finance/FinancialDashboard';
 
 // --- CONTEXTO MULTI-EMPRESA ---
 type CompanyId = 'BD' | 'LOG' | 'GLOBAL';
@@ -49,8 +56,34 @@ export enum Module {
   Clientes = 'Clientes',
   Motoristas = 'Motoristas',
   Programacao = 'Programação',
+  EmissaoCTE = 'Emissão de CTE',
   Financeiro = 'Financeiro',
+  GestaoCTE = 'Gestão de CTE',
+  Usuarios = 'Usuários',
   Configuracoes = 'Configurações'
+}
+
+export interface CteRecord {
+  id: string;
+  cteNumber: string;
+  emissionDate: string;
+  customer: string;
+  origin: string;
+  destination: string;
+  cteValue: number;
+  driverName: string;
+  driverCpf: string;
+  driverFreight: number;
+  advanceValue: number;
+  advanceDate: string;
+  balanceValue: number;
+  balanceDate: string;
+  extraValue: number;
+  extraReference: string;
+  tollValue: number;
+  taxesRetained: number;
+  status: 'ATIVO' | 'CANCELADO';
+  financeConfirmed: boolean;
 }
 
 export interface RouteEntry {
@@ -82,6 +115,15 @@ export interface Client {
   financeEmail?: string;
   financeContact?: string;
   financePhone?: string;
+}
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: 'Administrador' | 'Operacional' | 'Financeiro' | 'Comercial' | 'Motorista';
+  status: 'Ativo' | 'Inativo';
+  ownerId: 'BD' | 'LOG' | 'GLOBAL';
 }
 
 export interface Driver {
@@ -127,6 +169,7 @@ export type LoadStatus =
   | 'DOCUMENTACAO' 
   | 'PRONTO_PROGRAMAR' 
   | 'AGUARDANDO PROGRAMAÇÃO' 
+  | 'AGUARDANDO EMISSÃO'
   | 'EM TRÂNSITO' 
   | 'ENTREGUE'
   | 'Cancelado';
@@ -158,6 +201,40 @@ export interface Load {
   commercialNotes?: string;
   targetDriverFreight?: number;
   otherCosts?: number;
+  taxesRetained?: number;
+  hasTaxes?: boolean;
+  cteNumber?: string;
+  cteUrl?: string;
+  ciotUrl?: string;
+  contractUrl?: string;
+  manifestUrl?: string;
+}
+
+export interface BankAccount {
+  id: string;
+  name: string;
+  type: 'BANCO' | 'CAIXA';
+  initialBalance: number;
+}
+
+export interface DRECategory {
+  id: string;
+  name: string;
+  group: 'RECEITA_BRUTA_COMPETENCIA' | 'RECEITA_BRUTA_CAIXA' | 'TRIBUTOS' | 'CUSTO_DIRETO_PESSOAL' | 'CUSTO_DIRETO_OPERACIONAL' | 'DESPESAS_COMERCIAIS' | 'DESPESAS_ADMINISTRATIVAS' | 'DESPESAS_FINANCEIRAS' | 'INVESTIMENTOS';
+}
+
+export interface Transaction {
+  id: string;
+  ownerId: 'BD' | 'LOG';
+  date: string;
+  desc: string;
+  type: 'ENTRADA' | 'SAIDA';
+  value: number;
+  cat: string;
+  bankAccountId?: string;
+  cte?: string;
+  status: 'PENDENTE' | 'EFETIVADO';
+  clientName?: string;
 }
 
 const App: React.FC = () => {
@@ -213,6 +290,26 @@ const App: React.FC = () => {
     }
   ]);
 
+  const [users, setUsers] = useState<User[]>([
+    { id: '1', name: 'Diego Ciatos', email: 'diegociatos@gmail.com', role: 'Administrador', status: 'Ativo', ownerId: 'GLOBAL' },
+    { id: '2', name: 'Ana Beatriz', email: 'ana@ciatoslog.com.br', role: 'Comercial', status: 'Ativo', ownerId: 'LOG' },
+    { id: '3', name: 'Marcos Oliveira', email: 'marcos@bdtransportes.com.br', role: 'Operacional', status: 'Ativo', ownerId: 'BD' },
+    { id: '4', name: 'Carla Financeiro', email: 'carla@ciatoslog.com.br', role: 'Financeiro', status: 'Ativo', ownerId: 'GLOBAL' }
+  ]);
+
+  const [ctes, setCtes] = useState<CteRecord[]>([
+    {
+      id: '1', cteNumber: '3915', emissionDate: '2026-01-02', cteValue: 62500.00,
+      customer: 'Mineração Vale', origin: 'Belo Horizonte/MG', destination: 'Vitória/ES',
+      driverFreight: 26207.61, advanceValue: 21142.60, advanceDate: '2026-01-05',
+      balanceValue: 3857.40, balanceDate: '2026-01-12', driverName: 'Arlindo Dos Santos',
+      driverCpf: '848.374.468-68', extraValue: -987.68, extraReference: 'Seguro Balsa', tollValue: 0,
+      taxesRetained: 219.93, status: 'ATIVO', financeConfirmed: true
+    }
+  ]);
+
+  const [currentUser, setCurrentUser] = useState<User>(users[0]);
+
   const [loads, setLoads] = useState<Load[]>([
     { 
       id: '1024', ownerId: 'LOG', date: '2023-10-25', customer: 'AgroForte S.A.', origin: 'São Paulo/SP', 
@@ -223,7 +320,51 @@ const App: React.FC = () => {
       id: '1025', ownerId: 'BD', date: '2023-10-26', customer: 'Mineração Vale (BD)', origin: 'BH/MG', 
       destination: 'Vitória/ES', value: 12800, cost: 9400, status: 'NEGOCIACAO', 
       loadType: 'Dedicada', vehicleTypeRequired: 'Carreta LS'
+    },
+    { 
+      id: '1026', ownerId: 'LOG', date: '2026-03-23', customer: 'Indústrias Brasil', origin: 'Rio de Janeiro/RJ', 
+      destination: 'Campinas/SP', value: 6500, cost: 4800, status: 'AGUARDANDO EMISSÃO', 
+      loadType: 'Fracionada', vehicleTypeRequired: 'Toco', commercialRep: 'Ana Beatriz',
+      driverId: '1', driver: 'João Silva', plate: 'ABC-1234', advance: 2000, balance: 2800,
+      assignedProgrammer: 'Operacional'
+    },
+    { 
+      id: '1027', ownerId: 'BD', date: '2026-03-24', customer: 'Comércio Varejista Ltda', origin: 'Belo Horizonte/MG', 
+      destination: 'Goiânia/GO', value: 8900, cost: 6200, status: 'AGUARDANDO EMISSÃO', 
+      loadType: 'Dedicada', vehicleTypeRequired: 'Carreta', commercialRep: 'Ana Beatriz',
+      driverId: '2', driver: 'Pedro Santos', plate: 'XYZ-9876', advance: 3000, balance: 3200,
+      assignedProgrammer: 'Comercial'
     }
+  ]);
+
+  const [transactions, setTransactions] = useState<Transaction[]>([
+    { id: '1', ownerId: 'LOG', date: '2026-11-10', desc: 'Faturamento Cliente AgroForte', type: 'ENTRADA', value: 15200.50, cat: '1', status: 'EFETIVADO', bankAccountId: '1', clientName: 'AgroForte S.A.' },
+    { id: '2', ownerId: 'LOG', date: '2026-11-11', desc: 'Abastecimento Frota - Posto Shell', type: 'SAIDA', value: 4850.20, cat: '6', status: 'EFETIVADO', bankAccountId: '1' },
+    { id: '3', ownerId: 'LOG', date: '2026-11-11', desc: 'Manutenção Caminhão ABC-1234', type: 'SAIDA', value: 1200.00, cat: '7', status: 'EFETIVADO', bankAccountId: '1' },
+    { id: '4', ownerId: 'BD', date: '2026-11-12', desc: 'Faturamento Indústrias Brasil', type: 'ENTRADA', value: 8900.00, cat: '1', status: 'EFETIVADO', bankAccountId: '2', clientName: 'Indústrias Brasil' },
+    { id: '5', ownerId: 'BD', date: '2026-11-13', desc: 'Pedágio Rota SP-RJ', type: 'SAIDA', value: 450.80, cat: '10', status: 'EFETIVADO', bankAccountId: '2' },
+    { id: '6', ownerId: 'LOG', date: '2026-11-14', desc: 'Pagamento Motoristas Quinzena', type: 'SAIDA', value: 22000.00, cat: '5', status: 'EFETIVADO', bankAccountId: '1' },
+  ]);
+
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([
+    { id: '1', name: 'Itaú - Conta Principal', type: 'BANCO', initialBalance: 150000 },
+    { id: '2', name: 'Caixa Interno', type: 'CAIXA', initialBalance: 5000 },
+  ]);
+
+  const [routes, setRoutes] = useState<RouteConfig[]>([]);
+  const [segments, setSegments] = useState<string[]>(['Agronegócio', 'Indústria', 'Químico e Petroquímico']);
+
+  const [dreCategories, setDreCategories] = useState<DRECategory[]>([
+    { id: '1', name: 'Frete', group: 'RECEITA_BRUTA_CAIXA' },
+    { id: '2', name: 'PIS', group: 'TRIBUTOS' },
+    { id: '3', name: 'COFINS', group: 'TRIBUTOS' },
+    { id: '4', name: 'ICMS', group: 'TRIBUTOS' },
+    { id: '5', name: 'Carreteiro', group: 'CUSTO_DIRETO_OPERACIONAL' },
+    { id: '6', name: 'Combustível', group: 'CUSTO_DIRETO_OPERACIONAL' },
+    { id: '7', name: 'Manutenção', group: 'CUSTO_DIRETO_OPERACIONAL' },
+    { id: '8', name: 'Despesas Administrativas', group: 'DESPESAS_ADMINISTRATIVAS' },
+    { id: '9', name: 'Impostos', group: 'TRIBUTOS' },
+    { id: '10', name: 'Operacional', group: 'CUSTO_DIRETO_OPERACIONAL' },
   ]);
 
   // LÓGICA DE FILTRAGEM GLOBAL
@@ -242,6 +383,11 @@ const App: React.FC = () => {
     [drivers, activeCompany]
   );
 
+  const filteredTransactions = useMemo(() => 
+    activeCompany === 'GLOBAL' ? transactions : transactions.filter(t => t.ownerId === activeCompany),
+    [transactions, activeCompany]
+  );
+
   const addLoad = (newLoad: Omit<Load, 'id' | 'date' | 'ownerId'>) => {
     const load: Load = {
       ...newLoad,
@@ -256,22 +402,69 @@ const App: React.FC = () => {
   const updateLoad = (updatedLoad: Load) => setLoads(loads.map(l => l.id === updatedLoad.id ? updatedLoad : l));
   const deleteLoad = (loadId: string) => setLoads(loads.filter(l => l.id !== loadId));
 
+  const addTransaction = (newTransaction: Omit<Transaction, 'id' | 'ownerId'>, specificOwnerId?: 'BD' | 'LOG') => {
+    const transaction: Transaction = {
+      ...newTransaction,
+      id: `${Math.floor(1000 + Math.random() * 9000)}`,
+      ownerId: specificOwnerId || (activeCompany === 'GLOBAL' ? 'LOG' : activeCompany),
+    };
+    setTransactions([transaction, ...transactions]);
+  };
+
+  const updateTransaction = (updatedTransaction: Transaction) => {
+    setTransactions(transactions.map(t => t.id === updatedTransaction.id ? updatedTransaction : t));
+  };
+
   const renderContent = () => {
     switch (activeModule) {
       case Module.Dashboard:
+        if (currentUser.role === 'Comercial') {
+          return <CommercialDashboard loads={filteredLoads} clients={filteredClients} currentUser={currentUser} />;
+        }
+        if (currentUser.role === 'Operacional') {
+          return <ProgrammerDashboard loads={filteredLoads} drivers={filteredDrivers} currentUser={currentUser} goToProgramming={() => setActiveModule(Module.Programacao)} />;
+        }
+        if (currentUser.role === 'Financeiro') {
+          return <FinancialDashboard transactions={filteredTransactions} bankAccounts={bankAccounts} currentUser={currentUser} />;
+        }
         return <DashboardModule unit={activeCompany} loads={filteredLoads} />;
       case Module.Comercial:
-        return <CommercialModule loads={filteredLoads} addLoad={addLoad} updateLoad={updateLoad} deleteLoad={deleteLoad} clients={filteredClients} drivers={filteredDrivers} />;
+        return <CommercialModule loads={filteredLoads} addLoad={addLoad} updateLoad={updateLoad} deleteLoad={deleteLoad} clients={filteredClients} drivers={filteredDrivers} goToProgramming={() => setActiveModule(Module.Programacao)} />;
       case Module.Clientes:
-        return <ClientsModule clients={filteredClients} setClients={setClients} segments={['Agronegócio', 'Indústria']} />;
+        return <ClientsModule clients={filteredClients} setClients={setClients} segments={segments} />;
       case Module.Motoristas:
         return <DriversModule drivers={filteredDrivers} setDrivers={setDrivers} vehicleTypes={vehicleTypes} />;
       case Module.Programacao:
-        return <ProgrammingModule loads={filteredLoads} updateLoad={updateLoad} drivers={filteredDrivers} />;
+        return <ProgrammingModule loads={filteredLoads} updateLoad={updateLoad} drivers={filteredDrivers} addTransaction={addTransaction} currentUser={currentUser} />;
       case Module.Financeiro:
-        return <FinanceModule unit={activeCompany} />;
+        return <FinanceModule 
+          unit={activeCompany} 
+          transactions={filteredTransactions} 
+          addTransaction={addTransaction} 
+          updateTransaction={updateTransaction}
+          bankAccounts={bankAccounts}
+          dreCategories={dreCategories}
+          clients={clients}
+        />;
+      case Module.GestaoCTE:
+        return <CteModule ctes={ctes} setCtes={setCtes} currentUser={currentUser} />;
+      case Module.EmissaoCTE:
+        return <CteEmissionModule loads={filteredLoads} updateLoad={updateLoad} currentUser={currentUser} />;
+      case Module.Usuarios:
+        return <UsersModule users={users} setUsers={setUsers} />;
       case Module.Configuracoes:
-        return <SettingsModule vehicleTypes={vehicleTypes} setVehicleTypes={setVehicleTypes} routes={[]} setRoutes={() => {}} segments={[]} setSegments={() => {}} />;
+        return <SettingsModule 
+          vehicleTypes={vehicleTypes} 
+          setVehicleTypes={setVehicleTypes} 
+          routes={routes} 
+          setRoutes={setRoutes} 
+          segments={segments} 
+          setSegments={setSegments} 
+          bankAccounts={bankAccounts}
+          setBankAccounts={setBankAccounts}
+          dreCategories={dreCategories}
+          setDreCategories={setDreCategories}
+        />;
       default:
         return <div className="p-10 text-center italic text-gray-400">Módulo em desenvolvimento...</div>;
     }
@@ -283,9 +476,20 @@ const App: React.FC = () => {
     { id: Module.Clientes, icon: <Building2 size={20} />, label: 'Clientes / CRM' },
     { id: Module.Programacao, icon: <CalendarDays size={20} />, label: 'Programação' },
     { id: Module.Motoristas, icon: <Contact2 size={20} />, label: 'Motoristas' },
+    { id: Module.EmissaoCTE, icon: <FileText size={20} />, label: 'Emissão de CTE' },
+    { id: Module.GestaoCTE, icon: <FileText size={20} />, label: 'Gestão de CTE' },
     { id: Module.Financeiro, icon: <CircleDollarSign size={20} />, label: 'Financeiro' },
+    { id: Module.Usuarios, icon: <Users size={20} />, label: 'Usuários' },
     { id: Module.Configuracoes, icon: <Settings size={20} />, label: 'Configurações' },
-  ];
+  ].filter(item => {
+    if (item.id === Module.Financeiro) return ['Administrador', 'Financeiro'].includes(currentUser.role);
+    if (item.id === Module.EmissaoCTE) return ['Administrador', 'Comercial', 'Operacional', 'Financeiro'].includes(currentUser.role);
+    if (item.id === Module.GestaoCTE) return ['Administrador', 'Financeiro', 'Comercial', 'Operacional'].includes(currentUser.role);
+    if (item.id === Module.Usuarios || item.id === Module.Configuracoes) return ['Administrador'].includes(currentUser.role);
+    if (item.id === Module.Comercial) return ['Administrador', 'Comercial', 'Financeiro'].includes(currentUser.role);
+    if (item.id === Module.Programacao || item.id === Module.Motoristas) return ['Administrador', 'Operacional', 'Comercial', 'Financeiro'].includes(currentUser.role);
+    return true; // Dashboard, Clientes
+  });
 
   return (
     <CompanyContext.Provider value={companyContextValue}>
@@ -343,9 +547,46 @@ const App: React.FC = () => {
 
             <div className="flex items-center gap-6">
               <button className="relative p-2 text-gray-500 hover:bg-gray-100 rounded-full transition-colors"><Bell size={20} /><span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span></button>
-              <div className="flex items-center gap-3 pl-6 border-l border-gray-200">
-                <div className="text-right hidden sm:block"><p className="text-sm font-bold text-gray-800">Gestor Administrativo</p><p className="text-xs text-gray-500">Logística Brasil</p></div>
-                <div className="bg-gray-100 p-1 rounded-full border-2 border-bordeaux/20 shrink-0"><UserCircle size={32} className="text-bordeaux" /></div>
+              
+              {/* SELETOR DE USUÁRIO (SIMULAÇÃO DE LOGIN) */}
+              <div className="relative group border-l border-gray-200 pl-6">
+                <div className="flex items-center gap-3 cursor-pointer">
+                  <div className="text-right hidden sm:block">
+                    <p className="text-sm font-bold text-gray-800">{currentUser.name}</p>
+                    <p className="text-xs text-gray-500">{currentUser.role}</p>
+                  </div>
+                  <div className="bg-gray-100 p-1 rounded-full border-2 border-bordeaux/20 shrink-0">
+                    <UserCircle size={32} className="text-bordeaux" />
+                  </div>
+                  <ChevronDown size={14} className="text-gray-400" />
+                </div>
+                
+                {/* DROPDOWN DE USUÁRIOS */}
+                <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-2xl shadow-xl border border-gray-100 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 overflow-hidden">
+                  <div className="p-3 bg-gray-50 border-b border-gray-100">
+                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Alternar Usuário</p>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto">
+                    {users.map(user => (
+                      <button 
+                        key={user.id}
+                        onClick={() => {
+                          setCurrentUser(user);
+                          setActiveModule(Module.Dashboard);
+                        }}
+                        className={`w-full px-4 py-3 flex items-center gap-3 text-left transition-colors ${currentUser.id === user.id ? 'bg-bordeaux/5' : 'hover:bg-gray-50'}`}
+                      >
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${currentUser.id === user.id ? 'bg-bordeaux text-white' : 'bg-gray-200 text-gray-600'}`}>
+                          {user.name.charAt(0)}
+                        </div>
+                        <div>
+                          <p className={`text-sm font-bold ${currentUser.id === user.id ? 'text-bordeaux' : 'text-gray-900'}`}>{user.name}</p>
+                          <p className="text-[10px] text-gray-500 uppercase font-medium tracking-wider">{user.role}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           </header>
