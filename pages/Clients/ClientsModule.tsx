@@ -21,20 +21,39 @@ import {
   Target,
   FileSpreadsheet,
   DollarSign,
-  UserCheck
+  UserCheck,
+  FileText,
+  Edit2,
+  Lock,
+  Unlock
 } from 'lucide-react';
-import { Client } from '../../App';
+import { Client, Load, User } from '../../App';
 
 interface ClientsModuleProps {
   clients: Client[];
   setClients: React.Dispatch<React.SetStateAction<Client[]>>;
   segments: string[];
+  loads: Load[];
+  currentUser: User;
 }
 
-const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segments }) => {
+const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segments, loads, currentUser }) => {
   const [showModal, setShowModal] = useState(false);
-  const [modalTab, setModalTab] = useState<'Dados' | 'Cobranca' | 'Decisores' | 'CRM'>('Dados');
+  const [modalTab, setModalTab] = useState<'Dados' | 'Cobranca' | 'Decisores' | 'CRM' | 'Historico'>('Dados');
   const [searchTerm, setSearchTerm] = useState('');
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const menuRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setOpenMenuId(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Form State
   const [formData, setFormData] = useState<Partial<Client>>({
@@ -52,8 +71,10 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segm
     stateRegistration: '',
     taxRegime: 'Simples Nacional',
     financeEmail: '',
+    financeEmail2: '',
     financeContact: '',
-    financePhone: ''
+    financePhone: '',
+    financePhone2: ''
   });
 
   const [newDecisor, setNewDecisor] = useState({
@@ -74,11 +95,15 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segm
   };
 
   const handleSaveClient = () => {
-    const newClient: Client = {
-      ...formData as Client,
-      id: Math.random().toString(36).substr(2, 5).toUpperCase(),
-    };
-    setClients([newClient, ...clients]);
+    if (selectedClientId) {
+      setClients(clients.map(c => c.id === selectedClientId ? { ...c, ...formData as Client } : c));
+    } else {
+      const newClient: Client = {
+        ...formData as Client,
+        id: Math.random().toString(36).substr(2, 5).toUpperCase(),
+      };
+      setClients([newClient, ...clients]);
+    }
     setShowModal(false);
     resetForm();
   };
@@ -88,7 +113,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segm
       name: '', cnpj: '', type: 'Indústria', segment: '', city: '', state: '',
       commercialRep: '', status: 'Prospecção', decisionMakers: [], history: [],
       icmsContributor: 'Não', stateRegistration: '', taxRegime: 'Simples Nacional',
-      financeEmail: '', financeContact: '', financePhone: ''
+      financeEmail: '', financeEmail2: '', financeContact: '', financePhone: '', financePhone2: ''
     });
     setModalTab('Dados');
   };
@@ -187,10 +212,26 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segm
                       {client.status}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-right">
-                    <button className="p-2 text-gray-400 hover:text-bordeaux hover:bg-bordeaux/5 rounded-lg transition-all">
+                  <td className="px-6 py-4 text-right relative">
+                    <button onClick={() => setOpenMenuId(openMenuId === client.id ? null : client.id)} className="p-2 text-gray-400 hover:text-bordeaux hover:bg-bordeaux/5 rounded-lg transition-all">
                       <MoreVertical size={18} />
                     </button>
+                    {openMenuId === client.id && (
+                      <div ref={menuRef} className="absolute right-10 top-12 w-56 bg-white rounded-2xl shadow-2xl border border-gray-100 z-50 overflow-hidden animate-in zoom-in-95">
+                        <button onClick={() => { setSelectedClientId(client.id); setFormData(client); setShowModal(true); setOpenMenuId(null); }} className="w-full px-6 py-4 flex items-center gap-3 text-left hover:bg-gray-50 transition-colors group">
+                          <Edit2 size={16} className="text-gray-400 group-hover:text-bordeaux" /><span className="text-xs font-black uppercase text-gray-600 tracking-widest">Editar Cadastro</span>
+                        </button>
+                        <button onClick={() => { setClients(clients.map(c => c.id === client.id ? {...c, status: c.status === 'Inativo' ? 'Ativo' : 'Inativo'} : c)); setOpenMenuId(null); }} className="w-full px-6 py-4 flex items-center gap-3 text-left hover:bg-gray-50 transition-colors group">
+                          {client.status === 'Inativo' ? <><Unlock size={16} className="text-emerald-500" /><span className="text-xs font-black uppercase text-emerald-600 tracking-widest">Ativar</span></> : <><Lock size={16} className="text-red-500" /><span className="text-xs font-black uppercase text-red-600 tracking-widest">Inativar</span></>}
+                        </button>
+                        <div className="h-[1px] bg-gray-100 w-full"></div>
+                        {currentUser.role === 'Administrador' && (
+                          <button onClick={() => { if(window.confirm('Excluir cliente?')) setClients(clients.filter(c => c.id !== client.id)); setOpenMenuId(null); }} className="w-full px-6 py-4 flex items-center gap-3 text-left hover:bg-red-50 transition-colors group">
+                            <Trash2 size={16} className="text-red-400" /><span className="text-xs font-black uppercase text-red-600 tracking-widest">Excluir Cliente</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -217,12 +258,12 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segm
             </div>
 
             {/* Tabs do Modal */}
-            <div className="flex border-b border-gray-100 bg-gray-50/50 shrink-0">
-              {(['Dados', 'Cobranca', 'Decisores', 'CRM'] as const).map(tab => (
+            <div className="flex border-b border-gray-100 bg-gray-50/50 shrink-0 overflow-x-auto">
+              {(['Dados', 'Cobranca', 'Decisores', 'CRM', 'Historico'] as const).map(tab => (
                 <button 
                   key={tab}
                   onClick={() => setModalTab(tab)}
-                  className={`px-8 py-4 text-sm font-bold transition-all border-b-2 ${
+                  className={`px-8 py-4 text-sm font-bold transition-all border-b-2 whitespace-nowrap ${
                     modalTab === tab ? 'border-bordeaux text-bordeaux bg-white' : 'border-transparent text-gray-400 hover:text-gray-600'
                   }`}
                 >
@@ -230,6 +271,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segm
                   {tab === 'Cobranca' && <div className="flex items-center gap-2"><DollarSign size={16}/> Dados para Cobrança</div>}
                   {tab === 'Decisores' && <div className="flex items-center gap-2"><UserPlus size={16}/> Matriz de Decisores</div>}
                   {tab === 'CRM' && <div className="flex items-center gap-2"><Target size={16}/> Inteligência Comercial</div>}
+                  {tab === 'Historico' && <div className="flex items-center gap-2"><FileText size={16}/> Histórico de Transportes</div>}
                 </button>
               ))}
             </div>
@@ -248,9 +290,10 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segm
                             placeholder="00.000.000/0000-00"
                             value={formData.cnpj}
                             onChange={(e) => setFormData({...formData, cnpj: e.target.value})}
-                            className="flex-1 px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-bordeaux/20 font-bold"
+                            disabled={!!selectedClientId}
+                            className={`flex-1 px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-bordeaux/20 font-bold ${selectedClientId ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : ''}`}
                           />
-                          <button type="button" className="px-3 bg-gray-100 text-gray-500 rounded-xl hover:bg-gray-200 transition-colors">
+                          <button type="button" disabled={!!selectedClientId} className={`px-3 bg-gray-100 text-gray-500 rounded-xl transition-colors ${selectedClientId ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-200'}`}>
                             <Globe size={18} />
                           </button>
                         </div>
@@ -261,7 +304,8 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segm
                           type="text" 
                           value={formData.name}
                           onChange={(e) => setFormData({...formData, name: e.target.value})}
-                          className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-bordeaux/20 font-bold"
+                          disabled={!!selectedClientId}
+                          className={`w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-bordeaux/20 font-bold ${selectedClientId ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : ''}`}
                         />
                       </div>
                       <div className="grid grid-cols-2 gap-4">
@@ -270,7 +314,8 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segm
                           <select 
                             value={formData.icmsContributor}
                             onChange={(e) => setFormData({...formData, icmsContributor: e.target.value as any})}
-                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-bordeaux/20 font-bold"
+                            disabled={!!selectedClientId}
+                            className={`w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-bordeaux/20 font-bold ${selectedClientId ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : ''}`}
                           >
                             <option>Sim</option>
                             <option>Não</option>
@@ -281,10 +326,10 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segm
                           <label className="text-[10px] font-black text-gray-500 uppercase">Inscrição Estadual</label>
                           <input 
                             type="text" 
-                            disabled={formData.icmsContributor !== 'Sim'}
+                            disabled={formData.icmsContributor !== 'Sim' || !!selectedClientId}
                             value={formData.stateRegistration}
                             onChange={(e) => setFormData({...formData, stateRegistration: e.target.value})}
-                            className={`w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-bordeaux/20 font-bold ${formData.icmsContributor !== 'Sim' ? 'bg-gray-50 cursor-not-allowed opacity-50' : ''}`}
+                            className={`w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-bordeaux/20 font-bold ${(formData.icmsContributor !== 'Sim' || selectedClientId) ? 'bg-gray-50 text-gray-400 cursor-not-allowed opacity-50' : ''}`}
                             placeholder="Apenas números"
                           />
                         </div>
@@ -294,7 +339,8 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segm
                         <select 
                           value={formData.taxRegime}
                           onChange={(e) => setFormData({...formData, taxRegime: e.target.value as any})}
-                          className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-bordeaux/20 font-bold"
+                          disabled={!!selectedClientId}
+                          className={`w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-bordeaux/20 font-bold ${selectedClientId ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : ''}`}
                         >
                           <option>Simples Nacional</option>
                           <option>Lucro Presumido</option>
@@ -312,7 +358,8 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segm
                         <select 
                           value={formData.type}
                           onChange={(e) => setFormData({...formData, type: e.target.value})}
-                          className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-bordeaux/20 font-bold"
+                          disabled={!!selectedClientId}
+                          className={`w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-bordeaux/20 font-bold ${selectedClientId ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : ''}`}
                         >
                           <option>Indústria</option>
                           <option>Embarcador</option>
@@ -325,7 +372,8 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segm
                         <select 
                           value={formData.segment}
                           onChange={(e) => setFormData({...formData, segment: e.target.value})}
-                          className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-bordeaux/20 font-bold"
+                          disabled={!!selectedClientId}
+                          className={`w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-bordeaux/20 font-bold ${selectedClientId ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : ''}`}
                         >
                           <option value="">Selecione...</option>
                           {segments.map(seg => <option key={seg} value={seg}>{seg}</option>)}
@@ -339,7 +387,8 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segm
                           type="text" 
                           value={formData.city}
                           onChange={(e) => setFormData({...formData, city: e.target.value})}
-                          className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-bordeaux/20 font-bold"
+                          disabled={!!selectedClientId}
+                          className={`w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-bordeaux/20 font-bold ${selectedClientId ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : ''}`}
                         />
                       </div>
                       <div>
@@ -349,7 +398,8 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segm
                           maxLength={2}
                           value={formData.state}
                           onChange={(e) => setFormData({...formData, state: e.target.value.toUpperCase()})}
-                          className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-bordeaux/20 font-bold text-center"
+                          disabled={!!selectedClientId}
+                          className={`w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-bordeaux/20 font-bold text-center ${selectedClientId ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : ''}`}
                         />
                       </div>
                     </div>
@@ -368,20 +418,36 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segm
                       <FileSpreadsheet size={18}/> Parametrização para Faturamento
                     </h4>
                     <div className="space-y-4">
-                      <div>
-                        <label className="text-[10px] font-black text-gray-500 uppercase block mb-1">E-mail para envio de Faturas/Boletos</label>
-                        <div className="relative">
-                          <Mail size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-                          <input 
-                            type="email" 
-                            placeholder="financeiro@empresa.com.br"
-                            value={formData.financeEmail}
-                            onChange={(e) => setFormData({...formData, financeEmail: e.target.value})}
-                            className="w-full pl-12 pr-4 py-4 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-bordeaux/20 font-bold"
-                          />
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-[10px] font-black text-gray-500 uppercase block mb-1">E-mail para envio de Faturas/Boletos</label>
+                          <div className="relative">
+                            <Mail size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                            <input 
+                              type="email" 
+                              placeholder="financeiro@empresa.com.br"
+                              value={formData.financeEmail}
+                              onChange={(e) => setFormData({...formData, financeEmail: e.target.value})}
+                              disabled={!!selectedClientId}
+                              className={`w-full pl-12 pr-4 py-4 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-bordeaux/20 font-bold ${selectedClientId ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : ''}`}
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-black text-gray-500 uppercase block mb-1">E-mail Adicional</label>
+                          <div className="relative">
+                            <Mail size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                            <input 
+                              type="email" 
+                              placeholder="outro@empresa.com.br"
+                              value={formData.financeEmail2 || ''}
+                              onChange={(e) => setFormData({...formData, financeEmail2: e.target.value})}
+                              className="w-full pl-12 pr-4 py-4 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-bordeaux/20 font-bold"
+                            />
+                          </div>
                         </div>
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
                           <label className="text-[10px] font-black text-gray-500 uppercase block mb-1">Responsável Financeiro</label>
                           <div className="relative">
@@ -391,7 +457,8 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segm
                               placeholder="Nome do contato"
                               value={formData.financeContact}
                               onChange={(e) => setFormData({...formData, financeContact: e.target.value})}
-                              className="w-full pl-12 pr-4 py-4 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-bordeaux/20 font-bold"
+                              disabled={!!selectedClientId}
+                              className={`w-full pl-12 pr-4 py-4 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-bordeaux/20 font-bold ${selectedClientId ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : ''}`}
                             />
                           </div>
                         </div>
@@ -404,6 +471,20 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segm
                               placeholder="(00) 00000-0000"
                               value={formData.financePhone}
                               onChange={(e) => setFormData({...formData, financePhone: e.target.value})}
+                              disabled={!!selectedClientId}
+                              className={`w-full pl-12 pr-4 py-4 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-bordeaux/20 font-bold ${selectedClientId ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : ''}`}
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-black text-gray-500 uppercase block mb-1">Telefone Adicional</label>
+                          <div className="relative">
+                            <Phone size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                            <input 
+                              type="text" 
+                              placeholder="(00) 00000-0000"
+                              value={formData.financePhone2 || ''}
+                              onChange={(e) => setFormData({...formData, financePhone2: e.target.value})}
                               className="w-full pl-12 pr-4 py-4 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-bordeaux/20 font-bold"
                             />
                           </div>
@@ -422,7 +503,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segm
 
               {modalTab === 'Decisores' && (
                 <div className="space-y-6 animate-in slide-in-from-left-4">
-                  <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100 space-y-4">
+                  <div className={`bg-gray-50 p-6 rounded-2xl border border-gray-100 space-y-4 ${selectedClientId ? 'opacity-50 pointer-events-none' : ''}`}>
                     <h4 className="font-bold text-gray-800 flex items-center gap-2">
                       <UserPlus size={18} className="text-bordeaux" /> Adicionar Decisor Estratégico
                     </h4>
@@ -489,7 +570,17 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segm
                                <span className="text-xs font-black text-bordeaux">{dm.influence}%</span>
                              </div>
                            </div>
-                           <button className="p-2 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
+                           <button 
+                             onClick={() => {
+                               if (currentUser.role === 'Administrador' || !selectedClientId) {
+                                 setFormData({
+                                   ...formData,
+                                   decisionMakers: formData.decisionMakers.filter((_: any, i: number) => i !== idx)
+                                 });
+                               }
+                             }}
+                             className={`p-2 transition-all ${currentUser.role === 'Administrador' || !selectedClientId ? 'text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100' : 'text-gray-200 cursor-not-allowed'}`}
+                           >
                              <Trash2 size={16} />
                            </button>
                         </div>
@@ -513,7 +604,8 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segm
                           type="text" 
                           value={formData.commercialRep}
                           onChange={(e) => setFormData({...formData, commercialRep: e.target.value})}
-                          className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-bordeaux/20 font-bold" 
+                          disabled={!!selectedClientId}
+                          className={`w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-bordeaux/20 font-bold ${selectedClientId ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : ''}`} 
                         />
                       </div>
                       <div>
@@ -521,7 +613,8 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segm
                         <select 
                           value={formData.status}
                           onChange={(e) => setFormData({...formData, status: e.target.value as any})}
-                          className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-bordeaux/20 font-bold"
+                          disabled={!!selectedClientId}
+                          className={`w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-bordeaux/20 font-bold ${selectedClientId ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : ''}`}
                         >
                           <option>Prospecção</option>
                           <option>Ativo</option>
@@ -557,6 +650,74 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segm
                       <label className="text-[10px] font-black text-gray-500 uppercase">Anotações Estratégicas</label>
                       <textarea className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-bordeaux/20 font-medium text-sm" rows={4} placeholder="Pontos de dor do cliente, concorrência, etc..."></textarea>
                     </div>
+                  </div>
+                </div>
+              )}
+              {modalTab === 'Historico' && (
+                <div className="space-y-6 animate-in slide-in-from-left-4">
+                  <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                    <h4 className="font-bold text-gray-800 mb-6 flex items-center gap-2">
+                      <FileText size={18} className="text-bordeaux" /> Histórico de Transportes
+                    </h4>
+                    {formData.name ? (
+                      <div className="space-y-4">
+                        {(() => {
+                          const clientLoads = loads.filter(l => l.customer === formData.name);
+                          if (clientLoads.length === 0) {
+                            return <div className="text-center py-8 text-gray-400 italic">Nenhum transporte encontrado para este cliente.</div>;
+                          }
+
+                          // Group by month/year
+                          const groupedLoads = clientLoads.reduce((acc, load) => {
+                            const date = new Date(load.date);
+                            const monthYear = date.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+                            if (!acc[monthYear]) acc[monthYear] = [];
+                            acc[monthYear].push(load);
+                            return acc;
+                          }, {} as Record<string, Load[]>);
+
+                          return Object.entries(groupedLoads).map(([monthYear, monthLoads]) => (
+                            <div key={monthYear} className="border border-gray-100 rounded-xl overflow-hidden">
+                              <div className="bg-gray-50 px-4 py-3 border-b border-gray-100 flex justify-between items-center">
+                                <h5 className="font-bold text-gray-700 capitalize">{monthYear}</h5>
+                                <span className="text-xs font-black text-gray-400 uppercase tracking-widest">{(monthLoads as Load[]).length} transportes</span>
+                              </div>
+                              <div className="divide-y divide-gray-50">
+                                {(monthLoads as Load[]).map(load => (
+                                  <div key={load.id} className="p-4 flex items-center justify-between hover:bg-gray-50/50 transition-colors">
+                                    <div>
+                                      <div className="font-bold text-gray-800 flex items-center gap-2">
+                                        {load.origin} <span className="text-gray-300">→</span> {load.destination}
+                                      </div>
+                                      <div className="text-xs text-gray-500 mt-1 flex items-center gap-3">
+                                        <span>{new Date(load.date).toLocaleDateString('pt-BR')}</span>
+                                        {load.cteNumber && <span className="font-medium text-gray-600">CTE: {load.cteNumber}</span>}
+                                        <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                                          load.status === 'ENTREGUE' ? 'bg-emerald-100 text-emerald-700' :
+                                          load.status === 'EM TRÂNSITO' ? 'bg-blue-100 text-blue-700' :
+                                          'bg-amber-100 text-amber-700'
+                                        }`}>
+                                          {load.status}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <div className="text-right">
+                                      <div className="font-bold text-gray-900">
+                                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(load.value)}
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ));
+                        })()}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 text-gray-400 italic">
+                        Salve o cliente primeiro para visualizar o histórico.
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

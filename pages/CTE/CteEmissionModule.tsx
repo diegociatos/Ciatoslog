@@ -1,23 +1,28 @@
 import React, { useState } from 'react';
-import { Load, User as UserType } from '../../App';
+import { Load, User as UserType, CteRecord } from '../../App';
 import { Search, FileText, Upload, CheckCircle, AlertCircle } from 'lucide-react';
 
 interface CteEmissionModuleProps {
   loads: Load[];
   updateLoad: (updatedLoad: Load) => void;
   currentUser: UserType;
+  ctes: CteRecord[];
+  setCtes: React.Dispatch<React.SetStateAction<CteRecord[]>>;
 }
 
-const CteEmissionModule: React.FC<CteEmissionModuleProps> = ({ loads, updateLoad, currentUser }) => {
+const CteEmissionModule: React.FC<CteEmissionModuleProps> = ({ loads, updateLoad, currentUser, ctes, setCtes }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedLoad, setSelectedLoad] = useState<Load | null>(null);
   const [cteNumber, setCteNumber] = useState('');
+  const [dueDate, setDueDate] = useState('');
   
   // Simulated file uploads
-  const [cteDoc, setCteDoc] = useState<File | null>(null);
-  const [manifestDoc, setManifestDoc] = useState<File | null>(null);
-  const [ciotDoc, setCiotDoc] = useState<File | null>(null);
-  const [contractDoc, setContractDoc] = useState<File | null>(null);
+  const [cteDoc, setCteDoc] = useState<File | string | null>(null);
+  const [manifestDoc, setManifestDoc] = useState<File | string | null>(null);
+  const [ciotDoc, setCiotDoc] = useState<File | string | null>(null);
+  const [contractDoc, setContractDoc] = useState<File | string | null>(null);
+  const [invoiceDoc, setInvoiceDoc] = useState<File | string | null>(null);
+  const [otherDocs, setOtherDocs] = useState<File | string | null>(null);
 
   const pendingEmissionLoads = loads.filter(l => {
     if (l.status !== 'AGUARDANDO EMISSÃO') return false;
@@ -31,16 +36,20 @@ const CteEmissionModule: React.FC<CteEmissionModuleProps> = ({ loads, updateLoad
   }).filter(l => 
     l.customer.toLowerCase().includes(searchTerm.toLowerCase()) ||
     l.origin.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    l.destination.toLowerCase().includes(searchTerm.toLowerCase())
+    l.destination.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (l.cteNumber && l.cteNumber.includes(searchTerm))
   );
 
   const handleSelectLoad = (load: Load) => {
     setSelectedLoad(load);
     setCteNumber(load.cteNumber || '');
-    setCteDoc(null);
-    setManifestDoc(null);
-    setCiotDoc(null);
-    setContractDoc(null);
+    setDueDate('');
+    setCteDoc(load.cteUrl || null);
+    setManifestDoc(load.manifestUrl || null);
+    setCiotDoc(load.ciotUrl || null);
+    setContractDoc(load.contractUrl || null);
+    setInvoiceDoc(load.invoiceUrl || null);
+    setOtherDocs(load.otherDocsUrl || null);
   };
 
   const handleEmitir = () => {
@@ -51,16 +60,54 @@ const CteEmissionModule: React.FC<CteEmissionModuleProps> = ({ loads, updateLoad
       return;
     }
 
+    if (!dueDate) {
+      alert('Por favor, informe a data de vencimento da cobrança.');
+      return;
+    }
+
     const updatedLoad: Load = {
       ...selectedLoad,
       status: 'EM TRÂNSITO',
       cteNumber,
-      cteUrl: cteDoc ? 'uploaded' : selectedLoad.cteUrl,
-      manifestUrl: manifestDoc ? 'uploaded' : selectedLoad.manifestUrl,
-      ciotUrl: ciotDoc ? 'uploaded' : selectedLoad.ciotUrl,
-      contractUrl: contractDoc ? 'uploaded' : selectedLoad.contractUrl,
+      cteUrl: cteDoc ? (typeof cteDoc === 'string' ? cteDoc : cteDoc.name) : selectedLoad.cteUrl,
+      manifestUrl: manifestDoc ? (typeof manifestDoc === 'string' ? manifestDoc : manifestDoc.name) : selectedLoad.manifestUrl,
+      ciotUrl: ciotDoc ? (typeof ciotDoc === 'string' ? ciotDoc : ciotDoc.name) : selectedLoad.ciotUrl,
+      contractUrl: contractDoc ? (typeof contractDoc === 'string' ? contractDoc : contractDoc.name) : selectedLoad.contractUrl,
+      invoiceUrl: invoiceDoc ? (typeof invoiceDoc === 'string' ? invoiceDoc : invoiceDoc.name) : selectedLoad.invoiceUrl,
+      otherDocsUrl: otherDocs ? (typeof otherDocs === 'string' ? otherDocs : otherDocs.name) : selectedLoad.otherDocsUrl,
     };
 
+    // Create a new CTE record in Gestão de CTE
+    const newCteRecord: CteRecord = {
+      id: Math.random().toString(36).substr(2, 9),
+      loadId: selectedLoad.id,
+      cteNumber,
+      emissionDate: new Date().toISOString().split('T')[0],
+      customer: selectedLoad.customer,
+      origin: selectedLoad.origin,
+      destination: selectedLoad.destination,
+      cteValue: selectedLoad.value,
+      driverName: selectedLoad.driver || '',
+      driverCpf: '', // Not available in Load, to be filled by Operacional
+      driverFreight: selectedLoad.cost,
+      advanceValue: selectedLoad.advance || 0,
+      advanceDate: '',
+      balanceValue: selectedLoad.balance || 0,
+      balanceDate: '',
+      extraValue: 0,
+      extraReference: '',
+      tollValue: 0,
+      taxesRetained: selectedLoad.taxesRetained || 0,
+      hasTaxes: selectedLoad.hasTaxes,
+      taxesValue: selectedLoad.taxesValue || 0,
+      status: 'ATIVO',
+      financeConfirmed: false,
+      financeRejected: false,
+      dueDate: dueDate,
+      isPaid: false
+    };
+
+    setCtes([newCteRecord, ...ctes]);
     updateLoad(updatedLoad);
     setSelectedLoad(null);
   };
@@ -164,18 +211,29 @@ const CteEmissionModule: React.FC<CteEmissionModuleProps> = ({ loads, updateLoad
               </div>
 
               <div className="space-y-4 pt-4">
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">Número do CTE *</label>
-                  <input 
-                    type="text" 
-                    value={cteNumber}
-                    onChange={(e) => setCteNumber(e.target.value)}
-                    placeholder="Ex: 12345"
-                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-bordeaux focus:border-transparent outline-none"
-                  />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">Número do CTE *</label>
+                    <input 
+                      type="text" 
+                      value={cteNumber}
+                      onChange={(e) => setCteNumber(e.target.value)}
+                      placeholder="Ex: 12345"
+                      className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-bordeaux focus:border-transparent outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">Data de Vencimento da Cobrança *</label>
+                    <input 
+                      type="date" 
+                      value={dueDate}
+                      onChange={(e) => setDueDate(e.target.value)}
+                      className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-bordeaux focus:border-transparent outline-none"
+                    />
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="border border-dashed border-gray-300 rounded-xl p-4 text-center hover:bg-gray-50 transition-colors">
                     <input 
                       type="file" 
@@ -186,7 +244,7 @@ const CteEmissionModule: React.FC<CteEmissionModuleProps> = ({ loads, updateLoad
                     <label htmlFor="cteDoc" className="cursor-pointer flex flex-col items-center gap-2">
                       <Upload size={24} className={cteDoc ? "text-emerald-500" : "text-gray-400"} />
                       <span className="text-sm font-bold text-gray-700">Anexar CTE</span>
-                      <span className="text-xs text-gray-500">{cteDoc ? cteDoc.name : 'Nenhum arquivo'}</span>
+                      <span className="text-xs text-gray-500">{cteDoc ? (typeof cteDoc === 'string' ? cteDoc : cteDoc.name) : 'Nenhum arquivo'}</span>
                     </label>
                   </div>
 
@@ -200,7 +258,7 @@ const CteEmissionModule: React.FC<CteEmissionModuleProps> = ({ loads, updateLoad
                     <label htmlFor="manifestDoc" className="cursor-pointer flex flex-col items-center gap-2">
                       <Upload size={24} className={manifestDoc ? "text-emerald-500" : "text-gray-400"} />
                       <span className="text-sm font-bold text-gray-700">Manifesto de Carga</span>
-                      <span className="text-xs text-gray-500">{manifestDoc ? manifestDoc.name : 'Nenhum arquivo'}</span>
+                      <span className="text-xs text-gray-500">{manifestDoc ? (typeof manifestDoc === 'string' ? manifestDoc : manifestDoc.name) : 'Nenhum arquivo'}</span>
                     </label>
                   </div>
 
@@ -214,7 +272,7 @@ const CteEmissionModule: React.FC<CteEmissionModuleProps> = ({ loads, updateLoad
                     <label htmlFor="ciotDoc" className="cursor-pointer flex flex-col items-center gap-2">
                       <Upload size={24} className={ciotDoc ? "text-emerald-500" : "text-gray-400"} />
                       <span className="text-sm font-bold text-gray-700">CIOT</span>
-                      <span className="text-xs text-gray-500">{ciotDoc ? ciotDoc.name : 'Nenhum arquivo'}</span>
+                      <span className="text-xs text-gray-500">{ciotDoc ? (typeof ciotDoc === 'string' ? ciotDoc : ciotDoc.name) : 'Nenhum arquivo'}</span>
                     </label>
                   </div>
 
@@ -228,7 +286,36 @@ const CteEmissionModule: React.FC<CteEmissionModuleProps> = ({ loads, updateLoad
                     <label htmlFor="contractDoc" className="cursor-pointer flex flex-col items-center gap-2">
                       <Upload size={24} className={contractDoc ? "text-emerald-500" : "text-gray-400"} />
                       <span className="text-sm font-bold text-gray-700">Contrato de Frete</span>
-                      <span className="text-xs text-gray-500">{contractDoc ? contractDoc.name : 'Nenhum arquivo'}</span>
+                      <span className="text-xs text-gray-500">{contractDoc ? (typeof contractDoc === 'string' ? contractDoc : contractDoc.name) : 'Nenhum arquivo'}</span>
+                    </label>
+                  </div>
+
+                  <div className="border border-dashed border-gray-300 rounded-xl p-4 text-center hover:bg-gray-50 transition-colors">
+                    <input 
+                      type="file" 
+                      id="invoiceDoc" 
+                      className="hidden" 
+                      onChange={(e) => setInvoiceDoc(e.target.files?.[0] || null)}
+                    />
+                    <label htmlFor="invoiceDoc" className="cursor-pointer flex flex-col items-center gap-2">
+                      <Upload size={24} className={invoiceDoc ? "text-emerald-500" : "text-gray-400"} />
+                      <span className="text-sm font-bold text-gray-700">Nota Fiscal</span>
+                      <span className="text-xs text-gray-500">{invoiceDoc ? (typeof invoiceDoc === 'string' ? invoiceDoc : invoiceDoc.name) : 'Nenhum arquivo'}</span>
+                    </label>
+                  </div>
+
+                  <div className="border border-dashed border-gray-300 rounded-xl p-4 text-center hover:bg-gray-50 transition-colors">
+                    <input 
+                      type="file" 
+                      id="otherDocs" 
+                      className="hidden" 
+                      multiple
+                      onChange={(e) => setOtherDocs(e.target.files?.[0] || null)}
+                    />
+                    <label htmlFor="otherDocs" className="cursor-pointer flex flex-col items-center gap-2">
+                      <Upload size={24} className={otherDocs ? "text-emerald-500" : "text-gray-400"} />
+                      <span className="text-sm font-bold text-gray-700">Outros (Fotos/Docs)</span>
+                      <span className="text-xs text-gray-500">{otherDocs ? (typeof otherDocs === 'string' ? otherDocs : otherDocs.name) : 'Nenhum arquivo'}</span>
                     </label>
                   </div>
                 </div>

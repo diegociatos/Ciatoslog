@@ -1,0 +1,82 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && 
+        (getUserData().role == 'Administrador' || 
+         (request.auth.token.email == "diegociatos@gmail.com" && request.auth.token.email_verified == true));
+    }
+    
+    function hasRole(roles) {
+      return isAuthenticated() && (getUserData().role in roles || isAdmin());
+    }
+    
+    function isSameCompany(docOwnerId) {
+      return isAuthenticated() && (getUserData().ownerId == 'GLOBAL' || getUserData().ownerId == docOwnerId);
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && (isOwner(userId) || isAdmin());
+      allow update: if isAuthenticated() && (isOwner(userId) || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    match /loads/{loadId} {
+      allow read: if isAuthenticated() && (isSameCompany(resource.data.ownerId) || getUserData().role == 'Cliente');
+      allow create: if hasRole(['Comercial', 'Operacional', 'Administrador']);
+      allow update: if hasRole(['Comercial', 'Operacional', 'Administrador', 'Financeiro']);
+      allow delete: if isAdmin();
+    }
+
+    match /clients/{clientId} {
+      allow read: if isAuthenticated() && isSameCompany(resource.data.ownerId);
+      allow create: if hasRole(['Comercial', 'Administrador']);
+      allow update: if hasRole(['Comercial', 'Administrador']);
+      allow delete: if isAdmin();
+    }
+
+    match /drivers/{driverId} {
+      allow read: if isAuthenticated() && isSameCompany(resource.data.ownerId);
+      allow create: if hasRole(['Operacional', 'Administrador']);
+      allow update: if hasRole(['Operacional', 'Administrador']);
+      allow delete: if isAdmin();
+    }
+
+    match /transactions/{transactionId} {
+      allow read: if isAuthenticated() && (isSameCompany(resource.data.ownerId) || getUserData().role == 'Cliente');
+      allow create: if hasRole(['Financeiro', 'Administrador', 'Operacional']);
+      allow update: if hasRole(['Financeiro', 'Administrador']);
+      allow delete: if isAdmin();
+    }
+
+    match /ctes/{cteId} {
+      allow read: if isAuthenticated() && isSameCompany(resource.data.ownerId);
+      allow create: if hasRole(['Comercial', 'Operacional', 'Administrador', 'Financeiro']);
+      allow update: if hasRole(['Comercial', 'Operacional', 'Administrador', 'Financeiro']);
+      allow delete: if isAdmin();
+    }
+  }
+}

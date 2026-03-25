@@ -18,9 +18,10 @@ import {
   Percent,
   Target,
   X,
-  FileSpreadsheet
+  FileSpreadsheet,
+  TrendingUp
 } from 'lucide-react';
-import { VehicleType, RouteConfig, BankAccount, DRECategory } from '../../App';
+import { VehicleType, RouteConfig, BankAccount, DRECategory, User, CommercialGoal, CommissionRule } from '../../App';
 
 interface SettingsModuleProps {
   vehicleTypes: VehicleType[];
@@ -33,6 +34,11 @@ interface SettingsModuleProps {
   setBankAccounts: React.Dispatch<React.SetStateAction<BankAccount[]>>;
   dreCategories: DRECategory[];
   setDreCategories: React.Dispatch<React.SetStateAction<DRECategory[]>>;
+  users: User[];
+  commercialGoals: CommercialGoal[];
+  setCommercialGoals: React.Dispatch<React.SetStateAction<CommercialGoal[]>>;
+  commissionRules: CommissionRule[];
+  setCommissionRules: React.Dispatch<React.SetStateAction<CommissionRule[]>>;
 }
 
 const SettingsModule: React.FC<SettingsModuleProps> = ({ 
@@ -45,9 +51,14 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({
   bankAccounts,
   setBankAccounts,
   dreCategories,
-  setDreCategories
+  setDreCategories,
+  users,
+  commercialGoals,
+  setCommercialGoals,
+  commissionRules,
+  setCommissionRules
 }) => {
-  const [activeTab, setActiveTab] = useState<'Veiculos' | 'Rotas' | 'Segmentos' | 'Agenciamento' | 'Usuarios' | 'Bancos' | 'DRE'>('Veiculos');
+  const [activeTab, setActiveTab] = useState<'Veiculos' | 'Segmentos' | 'Agenciamento' | 'Usuarios' | 'Bancos' | 'DRE' | 'Metas'>('Veiculos');
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-10">
@@ -66,12 +77,12 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({
       <div className="flex border-b border-gray-200 bg-white rounded-t-3xl shadow-sm px-6 overflow-x-auto">
         {[
           { id: 'Veiculos', label: 'Tipos de Veículos', icon: <Truck size={18} /> },
-          { id: 'Rotas', label: 'Rotas Operacionais', icon: <Route size={18} /> },
           { id: 'Segmentos', label: 'Segmentos de Mercado', icon: <Target size={18} /> },
           { id: 'Agenciamento', label: 'Regras de Agenciamento', icon: <Percent size={18} /> },
           { id: 'Usuarios', label: 'Segurança & Acessos', icon: <Users size={18} /> },
           { id: 'Bancos', label: 'Bancos e Caixas', icon: <DollarSign size={18} /> },
-          { id: 'DRE', label: 'Categorias DRE', icon: <Layers size={18} /> }
+          { id: 'DRE', label: 'Categorias DRE', icon: <Layers size={18} /> },
+          { id: 'Metas', label: 'Metas e Comissões', icon: <TrendingUp size={18} /> }
         ].map((tab: any) => (
           <button
             key={tab.id}
@@ -90,12 +101,17 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({
       {/* Conteúdo das Abas */}
       <div className="bg-white rounded-b-3xl shadow-sm border border-gray-100 p-8 min-h-[600px]">
         {activeTab === 'Veiculos' && <VehicleManager vehicleTypes={vehicleTypes} setVehicleTypes={setVehicleTypes} />}
-        {activeTab === 'Rotas' && <RouteManager routes={routes} setRoutes={setRoutes} />}
         {activeTab === 'Segmentos' && <SegmentManager segments={segments} setSegments={setSegments} />}
         {activeTab === 'Agenciamento' && <AgencyManager />}
         {activeTab === 'Usuarios' && <UserManager />}
         {activeTab === 'Bancos' && <BankManager bankAccounts={bankAccounts} setBankAccounts={setBankAccounts} />}
         {activeTab === 'DRE' && <DRECategoryManager dreCategories={dreCategories} setDreCategories={setDreCategories} />}
+        {activeTab === 'Metas' && (
+          <div className="space-y-12">
+            <CommercialGoalsManager users={users} commercialGoals={commercialGoals} setCommercialGoals={setCommercialGoals} />
+            <CommissionRulesManager commissionRules={commissionRules} setCommissionRules={setCommissionRules} />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -686,5 +702,347 @@ const UserCard = ({ name, role, email, status }: any) => (
     </div>
   </div>
 );
+
+const CommercialGoalsManager = ({ users, commercialGoals, setCommercialGoals }: { users: User[], commercialGoals: CommercialGoal[], setCommercialGoals: React.Dispatch<React.SetStateAction<CommercialGoal[]>> }) => {
+  const [selectedUser, setSelectedUser] = useState<string>('');
+  const [selectedMonth, setSelectedMonth] = useState<string>('01');
+  const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
+  const [salesGoal, setSalesGoal] = useState<number>(0);
+  const [prospectingGoal, setProspectingGoal] = useState<number>(0);
+
+  const commercialUsers = users.filter(u => u.role === 'Comercial');
+
+  const handleAddGoal = () => {
+    if (!selectedUser) return;
+    
+    // Check if goal already exists for this user/month/year
+    const existingIndex = commercialGoals.findIndex(g => g.userId === selectedUser && g.month === selectedMonth && g.year === selectedYear);
+    
+    if (existingIndex >= 0) {
+      const updatedGoals = [...commercialGoals];
+      updatedGoals[existingIndex] = {
+        ...updatedGoals[existingIndex],
+        salesGoal,
+        prospectingGoal
+      };
+      setCommercialGoals(updatedGoals);
+    } else {
+      const newGoal: CommercialGoal = {
+        id: `G${Date.now()}`,
+        userId: selectedUser,
+        month: selectedMonth,
+        year: selectedYear,
+        salesGoal,
+        prospectingGoal
+      };
+      setCommercialGoals([...commercialGoals, newGoal]);
+    }
+    
+    // Reset form
+    setSalesGoal(0);
+    setProspectingGoal(0);
+  };
+
+  const handleDeleteGoal = (id: string) => {
+    setCommercialGoals(commercialGoals.filter(g => g.id !== id));
+  };
+
+  const months = [
+    { value: '01', label: 'Janeiro' }, { value: '02', label: 'Fevereiro' },
+    { value: '03', label: 'Março' }, { value: '04', label: 'Abril' },
+    { value: '05', label: 'Maio' }, { value: '06', label: 'Junho' },
+    { value: '07', label: 'Julho' }, { value: '08', label: 'Agosto' },
+    { value: '09', label: 'Setembro' }, { value: '10', label: 'Outubro' },
+    { value: '11', label: 'Novembro' }, { value: '12', label: 'Dezembro' }
+  ];
+
+  const currentYear = new Date().getFullYear();
+  const years = Array.from({ length: 10 }, (_, i) => (currentYear - 2 + i).toString());
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-gray-800">Metas do Comercial</h2>
+          <p className="text-sm text-gray-500">Defina metas de faturamento e prospecção por mês para cada usuário comercial.</p>
+        </div>
+      </div>
+
+      <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">Comercial</label>
+            <select
+              value={selectedUser}
+              onChange={(e) => setSelectedUser(e.target.value)}
+              className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-bordeaux focus:border-transparent outline-none transition-all"
+            >
+              <option value="">Selecione...</option>
+              {commercialUsers.map(u => (
+                <option key={u.id} value={u.name}>{u.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">Mês</label>
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-bordeaux focus:border-transparent outline-none transition-all"
+            >
+              {months.map(m => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">Ano</label>
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(e.target.value)}
+              className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-bordeaux focus:border-transparent outline-none transition-all"
+            >
+              {years.map(y => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">Meta Faturamento (R$)</label>
+            <input
+              type="number"
+              value={salesGoal || ''}
+              onChange={(e) => setSalesGoal(Number(e.target.value))}
+              placeholder="Ex: 50000"
+              className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-bordeaux focus:border-transparent outline-none transition-all"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">Meta Prospecção (Qtd)</label>
+            <div className="flex gap-2">
+              <input
+                type="number"
+                value={prospectingGoal || ''}
+                onChange={(e) => setProspectingGoal(Number(e.target.value))}
+                placeholder="Ex: 10"
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-bordeaux focus:border-transparent outline-none transition-all"
+              />
+              <button
+                onClick={handleAddGoal}
+                disabled={!selectedUser || salesGoal <= 0 || prospectingGoal <= 0}
+                className="bg-bordeaux text-white p-3 rounded-xl hover:bg-bordeaux-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+              >
+                <Plus size={20} />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
+        <table className="w-full text-left border-collapse">
+          <thead>
+            <tr className="bg-gray-50 border-b border-gray-100">
+              <th className="py-4 px-6 font-semibold text-gray-600 text-sm">Comercial</th>
+              <th className="py-4 px-6 font-semibold text-gray-600 text-sm">Período</th>
+              <th className="py-4 px-6 font-semibold text-gray-600 text-sm">Meta Faturamento</th>
+              <th className="py-4 px-6 font-semibold text-gray-600 text-sm">Meta Prospecção</th>
+              <th className="py-4 px-6 font-semibold text-gray-600 text-sm text-right">Ações</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {commercialGoals.map((goal) => (
+              <tr key={goal.id} className="hover:bg-gray-50/50 transition-colors">
+                <td className="py-4 px-6">
+                  <span className="font-medium text-gray-900">{goal.userId}</span>
+                </td>
+                <td className="py-4 px-6 text-gray-600">
+                  {months.find(m => m.value === goal.month)?.label} / {goal.year}
+                </td>
+                <td className="py-4 px-6 text-gray-600">
+                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(goal.salesGoal)}
+                </td>
+                <td className="py-4 px-6 text-gray-600">
+                  {goal.prospectingGoal} clientes
+                </td>
+                <td className="py-4 px-6 text-right">
+                  <button 
+                    onClick={() => handleDeleteGoal(goal.id)}
+                    className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {commercialGoals.length === 0 && (
+              <tr>
+                <td colSpan={5} className="py-8 text-center text-gray-500">
+                  Nenhuma meta cadastrada.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+const CommissionRulesManager = ({ commissionRules, setCommissionRules }: { commissionRules: CommissionRule[], setCommissionRules: React.Dispatch<React.SetStateAction<CommissionRule[]>> }) => {
+  const [role, setRole] = useState<'Comercial' | 'Operacional'>('Comercial');
+  const [type, setType] = useState<'Comissao_Faturamento' | 'Meta_Extra'>('Comissao_Faturamento');
+  const [minRevenue, setMinRevenue] = useState<number>(0);
+  const [maxRevenue, setMaxRevenue] = useState<number>(0);
+  const [commissionPercentage, setCommissionPercentage] = useState<number>(0);
+  const [targetRevenue, setTargetRevenue] = useState<number>(0);
+  const [maxCostPercentage, setMaxCostPercentage] = useState<number>(0);
+  const [bonusAmount, setBonusAmount] = useState<number>(0);
+
+  const handleAddRule = () => {
+    const newRule: CommissionRule = {
+      id: `CR${Date.now()}`,
+      role,
+      type,
+      minRevenue: type === 'Comissao_Faturamento' ? minRevenue : undefined,
+      maxRevenue: type === 'Comissao_Faturamento' ? maxRevenue : undefined,
+      commissionPercentage: type === 'Comissao_Faturamento' ? commissionPercentage : undefined,
+      targetRevenue: type === 'Meta_Extra' && role === 'Comercial' ? targetRevenue : undefined,
+      maxCostPercentage: type === 'Meta_Extra' ? maxCostPercentage : undefined,
+      bonusAmount: type === 'Meta_Extra' ? bonusAmount : undefined,
+    };
+    setCommissionRules([...commissionRules, newRule]);
+    setMinRevenue(0);
+    setMaxRevenue(0);
+    setCommissionPercentage(0);
+    setTargetRevenue(0);
+    setMaxCostPercentage(0);
+    setBonusAmount(0);
+  };
+
+  const handleDeleteRule = (id: string) => {
+    setCommissionRules(commissionRules.filter(r => r.id !== id));
+  };
+
+  return (
+    <div className="space-y-6 pt-10 border-t border-gray-200">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-gray-800">Regras de Comissionamento e Metas Extras</h2>
+          <p className="text-sm text-gray-500">Defina regras de comissão sobre faturamento e bônus por redução de custo.</p>
+        </div>
+      </div>
+
+      <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Perfil</label>
+            <select 
+              value={role} 
+              onChange={(e) => {
+                setRole(e.target.value as 'Comercial' | 'Operacional');
+                if (e.target.value === 'Operacional') setType('Meta_Extra');
+              }}
+              className="w-full p-3 border border-gray-200 rounded-xl bg-white"
+            >
+              <option value="Comercial">Comercial</option>
+              <option value="Operacional">Operacional (Programador)</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Tipo de Regra</label>
+            <select 
+              value={type} 
+              onChange={(e) => setType(e.target.value as 'Comissao_Faturamento' | 'Meta_Extra')}
+              className="w-full p-3 border border-gray-200 rounded-xl bg-white"
+              disabled={role === 'Operacional'}
+            >
+              {role === 'Comercial' && <option value="Comissao_Faturamento">Comissão sobre Faturamento</option>}
+              <option value="Meta_Extra">Meta Extra (Bônus)</option>
+            </select>
+          </div>
+        </div>
+
+        {type === 'Comissao_Faturamento' && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Faturamento Mínimo (R$)</label>
+              <input type="number" value={minRevenue} onChange={(e) => setMinRevenue(Number(e.target.value))} className="w-full p-3 border border-gray-200 rounded-xl" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Faturamento Máximo (R$)</label>
+              <input type="number" value={maxRevenue} onChange={(e) => setMaxRevenue(Number(e.target.value))} className="w-full p-3 border border-gray-200 rounded-xl" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Comissão (%)</label>
+              <input type="number" value={commissionPercentage} onChange={(e) => setCommissionPercentage(Number(e.target.value))} className="w-full p-3 border border-gray-200 rounded-xl" />
+            </div>
+          </div>
+        )}
+
+        {type === 'Meta_Extra' && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            {role === 'Comercial' && (
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Faturamento Alvo (R$)</label>
+                <input type="number" value={targetRevenue} onChange={(e) => setTargetRevenue(Number(e.target.value))} className="w-full p-3 border border-gray-200 rounded-xl" />
+              </div>
+            )}
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Custo Máximo (%)</label>
+              <input type="number" value={maxCostPercentage} onChange={(e) => setMaxCostPercentage(Number(e.target.value))} className="w-full p-3 border border-gray-200 rounded-xl" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Bônus Fixo (R$)</label>
+              <input type="number" value={bonusAmount} onChange={(e) => setBonusAmount(Number(e.target.value))} className="w-full p-3 border border-gray-200 rounded-xl" />
+            </div>
+          </div>
+        )}
+
+        <button 
+          onClick={handleAddRule}
+          className="bg-bordeaux text-white px-6 py-3 rounded-xl font-bold hover:bg-bordeaux/90 transition-colors flex items-center gap-2"
+        >
+          <Plus size={18} /> Adicionar Regra
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {commissionRules.map(rule => (
+          <div key={rule.id} className="bg-white p-5 rounded-2xl border border-gray-200 flex justify-between items-center shadow-sm">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-md ${rule.role === 'Comercial' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>
+                  {rule.role}
+                </span>
+                <span className="text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-md bg-gray-100 text-gray-600">
+                  {rule.type === 'Comissao_Faturamento' ? 'Comissão' : 'Bônus Extra'}
+                </span>
+              </div>
+              {rule.type === 'Comissao_Faturamento' ? (
+                <p className="text-sm font-bold text-gray-800">
+                  {rule.minRevenue?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} a {rule.maxRevenue?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} <br/>
+                  <span className="text-bordeaux text-lg">{rule.commissionPercentage}%</span> sobre faturamento
+                </p>
+              ) : (
+                <p className="text-sm font-bold text-gray-800">
+                  {rule.role === 'Comercial' && `Faturamento >= ${rule.targetRevenue?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} e `}
+                  Custo &lt;= {rule.maxCostPercentage}% <br/>
+                  <span className="text-emerald-600 text-lg">+{rule.bonusAmount?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                </p>
+              )}
+            </div>
+            <button onClick={() => handleDeleteRule(rule.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+              <Trash2 size={18} />
+            </button>
+          </div>
+        ))}
+        {commissionRules.length === 0 && (
+          <div className="col-span-full text-center py-10 text-gray-400 text-sm">Nenhuma regra cadastrada.</div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 export default SettingsModule;

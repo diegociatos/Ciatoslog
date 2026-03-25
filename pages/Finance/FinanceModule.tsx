@@ -1,11 +1,14 @@
 import React, { useState, useMemo } from 'react';
 import { 
   ArrowUpCircle, ArrowDownCircle, Wallet, Download, Calendar,
-  TrendingUp, Scale, FileSpreadsheet, Plus, CheckCircle, Clock, X, Building2, Layers
+  TrendingUp, Scale, FileSpreadsheet, Plus, CheckCircle, Clock, X, Building2, Layers, ArrowUp, ArrowDown
 } from 'lucide-react';
-import { Transaction, BankAccount, DRECategory } from '../../App';
+import { Transaction, BankAccount, DRECategory, CteRecord, User } from '../../App';
 
-type FinanceTab = 'Fluxo de Caixa' | 'Ordens de Pagamento' | 'DRE';
+import CompanyValuation from './CompanyValuation';
+import CteReceivables from './CteReceivables';
+
+type FinanceTab = 'Fluxo de Caixa' | 'Ordens de Pagamento' | 'DRE' | 'Valuation' | 'Recebimentos CTE';
 
 interface FinanceModuleProps {
   unit: string;
@@ -14,7 +17,11 @@ interface FinanceModuleProps {
   updateTransaction: (transaction: Transaction) => void;
   bankAccounts: BankAccount[];
   dreCategories: DRECategory[];
+  setDreCategories?: React.Dispatch<React.SetStateAction<DRECategory[]>>;
   clients: any[];
+  ctes: CteRecord[];
+  setCtes: React.Dispatch<React.SetStateAction<CteRecord[]>>;
+  currentUser: User;
 }
 
 const formatCurrency = (val: number) => 
@@ -27,12 +34,19 @@ const FinanceModule: React.FC<FinanceModuleProps> = ({
   updateTransaction,
   bankAccounts,
   dreCategories,
-  clients
+  setDreCategories,
+  clients,
+  ctes,
+  setCtes,
+  currentUser
 }) => {
-  const [activeTab, setActiveTab] = useState<FinanceTab>('Fluxo de Caixa');
+  const [activeTab, setActiveTab] = useState<FinanceTab>(currentUser.role === 'Gestor' ? 'Ordens de Pagamento' : 'Fluxo de Caixa');
+  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
 
   const completedTransactions = transactions.filter(t => t.status === 'EFETIVADO');
-  const pendingTransactions = transactions.filter(t => t.status === 'PENDENTE');
+  const pendingTransactions = transactions.filter(t => t.status === 'PENDENTE' || t.status === 'CANCELADO');
+  const activeTransactions = transactions.filter(t => t.status !== 'CANCELADO');
 
   const totalIn = completedTransactions.filter(i => i.type === 'ENTRADA').reduce((a, b) => a + b.value, 0);
   const totalOut = completedTransactions.filter(i => i.type === 'SAIDA').reduce((a, b) => a + b.value, 0);
@@ -41,11 +55,15 @@ const FinanceModule: React.FC<FinanceModuleProps> = ({
     switch (activeTab) {
       case 'Fluxo de Caixa':
         return <CashFlow 
-          transactions={completedTransactions} 
+          transactions={activeTransactions} 
           bankAccounts={bankAccounts}
           dreCategories={dreCategories}
           addTransaction={addTransaction}
+          updateTransaction={updateTransaction}
           clients={clients}
+          ctes={ctes}
+          selectedMonth={selectedMonth}
+          selectedYear={selectedYear}
         />;
       case 'Ordens de Pagamento':
         return <PaymentOrders 
@@ -54,9 +72,16 @@ const FinanceModule: React.FC<FinanceModuleProps> = ({
           bankAccounts={bankAccounts} 
           dreCategories={dreCategories}
           clients={clients}
+          ctes={ctes}
+          selectedMonth={selectedMonth}
+          selectedYear={selectedYear}
         />;
       case 'DRE':
         return <DynamicDRE transactions={completedTransactions} dreCategories={dreCategories} clients={clients} />;
+      case 'Valuation':
+        return <CompanyValuation transactions={completedTransactions} dreCategories={dreCategories} setDreCategories={setDreCategories} />;
+      case 'Recebimentos CTE':
+        return <CteReceivables ctes={ctes} setCtes={setCtes} />;
       default:
         return null;
     }
@@ -70,18 +95,29 @@ const FinanceModule: React.FC<FinanceModuleProps> = ({
           <p className="text-gray-500 italic">Gestão de resultados, fluxo de caixa e auditoria contábil.</p>
         </div>
         <div className="flex gap-2">
-          <button className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-gray-600 font-bold hover:bg-gray-50 shadow-sm transition-all">
-            <Calendar size={18} /> Novembro / 2023
-          </button>
+          <input 
+            type="month" 
+            value={`${selectedYear}-${String(selectedMonth).padStart(2, '0')}`}
+            onChange={(e) => {
+              const [y, m] = e.target.value.split('-');
+              if (y && m) {
+                setSelectedYear(parseInt(y));
+                setSelectedMonth(parseInt(m));
+              }
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-gray-600 font-bold hover:bg-gray-50 shadow-sm transition-all"
+          />
         </div>
       </div>
 
       <div className="flex border-b border-gray-200 bg-white rounded-t-3xl shadow-sm px-6">
         {[
-          { id: 'Fluxo de Caixa', label: 'Fluxo de Caixa', icon: <Wallet size={18} /> },
+          { id: 'Fluxo de Caixa', label: 'Fluxo de Caixa', icon: <Wallet size={18} />, hideForGestor: true },
           { id: 'Ordens de Pagamento', label: 'Ordens de Pagamento', icon: <Clock size={18} /> },
-          { id: 'DRE', label: 'DRE', icon: <FileSpreadsheet size={18} /> }
-        ].map((tab: any) => (
+          { id: 'Recebimentos CTE', label: 'Recebimentos CTE', icon: <CheckCircle size={18} /> },
+          { id: 'DRE', label: 'DRE', icon: <FileSpreadsheet size={18} />, hideForGestor: true },
+          { id: 'Valuation', label: 'Valuation & Histórico', icon: <TrendingUp size={18} />, hideForGestor: true }
+        ].filter(tab => !(currentUser.role === 'Gestor' && tab.hideForGestor)).map((tab: any) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as FinanceTab)}
@@ -107,53 +143,237 @@ const FinanceModule: React.FC<FinanceModuleProps> = ({
 };
 
 // --- Cash Flow Component ---
-const CashFlow = ({ transactions, bankAccounts, dreCategories, addTransaction, clients }: any) => {
+const CashFlow = ({ transactions, bankAccounts, dreCategories, addTransaction, updateTransaction, clients, ctes, selectedMonth, selectedYear }: any) => {
   const [showModal, setShowModal] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportPeriod, setExportPeriod] = useState<'MONTH' | 'YEAR' | 'CUSTOM'>('MONTH');
+  const [exportMonth, setExportMonth] = useState(new Date().getMonth() + 1);
+  const [exportYear, setExportYear] = useState(new Date().getFullYear());
+  const [exportStartDate, setExportStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [exportEndDate, setExportEndDate] = useState(new Date().toISOString().split('T')[0]);
+
   const [modalType, setModalType] = useState<'ENTRADA' | 'SAIDA'>('SAIDA');
   const [selectedBankId, setSelectedBankId] = useState<string>(bankAccounts.length > 0 ? bankAccounts[0].id : '');
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
+    dueDate: new Date().toISOString().split('T')[0],
+    isRecurring: false,
+    status: 'EFETIVADO',
     value: '',
     cat: '',
     desc: '',
     bankAccountId: selectedBankId,
     cte: '',
-    clientName: ''
+    clientName: '',
+    carreteiroType: ''
   });
 
-  const selectedBank = bankAccounts.find((b: any) => b.id === selectedBankId);
-  const initialBalance = selectedBank ? selectedBank.initialBalance : 0;
+  const [editingTxId, setEditingTxId] = useState<string | null>(null);
+  const [editData, setEditData] = useState<any>({});
 
-  const filteredTransactions = selectedBankId 
+  const handleEditClick = (tx: any) => {
+    setEditingTxId(tx.id);
+    setEditData({ ...tx });
+  };
+
+  const handleSaveEdit = () => {
+    if (editingTxId) {
+      if (editData.cat === '5') {
+        if (!editData.cte || !editData.carreteiroType) {
+          alert("Para despesas de carreteiro, o CTE e o Tipo de Lançamento são obrigatórios.");
+          return;
+        }
+      }
+      updateTransaction(editData);
+      setEditingTxId(null);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingTxId(null);
+  };
+
+  const selectedBank = bankAccounts.find((b: any) => b.id === selectedBankId);
+  const baseInitialBalance = selectedBank ? selectedBank.initialBalance : 0;
+
+  const allBankTransactions = selectedBankId 
     ? transactions.filter((t: any) => t.bankAccountId === selectedBankId)
     : [];
 
-  const totalIn = filteredTransactions.filter((i: any) => i.type === 'ENTRADA').reduce((a: any, b: any) => a + b.value, 0);
-  const totalOut = filteredTransactions.filter((i: any) => i.type === 'SAIDA').reduce((a: any, b: any) => a + b.value, 0);
+  const sortedAllTransactions = [...allBankTransactions].sort((a, b) => {
+    const dateDiff = new Date(a.date).getTime() - new Date(b.date).getTime();
+    if (dateDiff !== 0) return dateDiff;
+    return (a.orderIndex || 0) - (b.orderIndex || 0);
+  });
 
-  // Calculate running balance
-  let currentBalance = initialBalance;
-  const transactionsWithBalance = [...filteredTransactions].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).map(t => {
-    if (t.type === 'ENTRADA') currentBalance += t.value;
-    else currentBalance -= t.value;
-    return { ...t, balance: currentBalance };
-  }).reverse(); // Show newest first
+  let runningBalance = baseInitialBalance;
+  const transactionsWithBalance = sortedAllTransactions.map(t => {
+    if (t.type === 'ENTRADA') runningBalance += t.value;
+    else runningBalance -= t.value;
+    return { ...t, balance: runningBalance };
+  });
+
+  const displayedTransactions = transactionsWithBalance.filter(t => {
+    const d = new Date(t.date);
+    return (d.getMonth() + 1) === selectedMonth && d.getFullYear() === selectedYear;
+  }).reverse();
+
+  const previousTransactions = transactionsWithBalance.filter(t => {
+    const d = new Date(t.date);
+    return d.getFullYear() < selectedYear || (d.getFullYear() === selectedYear && (d.getMonth() + 1) < selectedMonth);
+  });
+
+  const initialBalance = previousTransactions.length > 0 
+    ? previousTransactions[previousTransactions.length - 1].balance 
+    : baseInitialBalance;
+
+  const totalIn = displayedTransactions.filter((i: any) => i.type === 'ENTRADA').reduce((a: any, b: any) => a + b.value, 0);
+  const totalOut = displayedTransactions.filter((i: any) => i.type === 'SAIDA').reduce((a: any, b: any) => a + b.value, 0);
+
+  const handleMove = (tx: any, direction: 'UP' | 'DOWN') => {
+    const sameDateTxs = [...allBankTransactions]
+      .filter(t => t.date === tx.date)
+      .sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0));
+
+    let needsFullUpdate = false;
+    sameDateTxs.forEach((t, i) => {
+      if (t.orderIndex === undefined) {
+        t.orderIndex = i;
+        needsFullUpdate = true;
+      }
+    });
+
+    const currentIndex = sameDateTxs.findIndex(t => t.id === tx.id);
+    if (currentIndex === -1) return;
+
+    // UP in UI = smaller index in reversed list = larger index in chronological list
+    const targetIndex = direction === 'UP' ? currentIndex + 1 : currentIndex - 1;
+
+    if (targetIndex < 0 || targetIndex >= sameDateTxs.length) return;
+
+    const currentTx = { ...sameDateTxs[currentIndex] };
+    const targetTx = { ...sameDateTxs[targetIndex] };
+
+    const tempOrder = currentTx.orderIndex;
+    currentTx.orderIndex = targetTx.orderIndex;
+    targetTx.orderIndex = tempOrder;
+
+    if (currentTx.orderIndex === targetTx.orderIndex) {
+      currentTx.orderIndex = direction === 'UP' ? 1 : 0;
+      targetTx.orderIndex = direction === 'UP' ? 0 : 1;
+    }
+
+    if (needsFullUpdate) {
+      sameDateTxs.forEach(t => {
+        if (t.id !== currentTx.id && t.id !== targetTx.id) {
+          updateTransaction(t);
+        }
+      });
+    }
+
+    updateTransaction(currentTx);
+    updateTransaction(targetTx);
+  };
+
+  const exportToCSV = () => {
+    let txsToExport = transactionsWithBalance;
+
+    if (exportPeriod === 'MONTH') {
+      txsToExport = txsToExport.filter(t => {
+        const d = new Date(t.date);
+        return d.getMonth() + 1 === exportMonth && d.getFullYear() === exportYear;
+      });
+    } else if (exportPeriod === 'YEAR') {
+      txsToExport = txsToExport.filter(t => new Date(t.date).getFullYear() === exportYear);
+    } else if (exportPeriod === 'CUSTOM') {
+      const start = new Date(exportStartDate).getTime();
+      const end = new Date(exportEndDate).getTime();
+      txsToExport = txsToExport.filter(t => {
+        const time = new Date(t.date).getTime();
+        return time >= start && time <= end;
+      });
+    }
+
+    const headers = ['Data', 'Entrada', 'Saída', 'Saldo', 'Receita/Despesa', 'Detalhamento', 'CTe', 'Banco/Caixa'];
+    const rows = txsToExport.map(item => {
+      const bank = bankAccounts.find((b: any) => b.id === item.bankAccountId);
+      const catName = dreCategories.find((c: any) => c.id === item.cat)?.name || item.cat;
+      const entrada = item.type === 'ENTRADA' ? item.value.toFixed(2).replace('.', ',') : '';
+      const saida = item.type === 'SAIDA' ? item.value.toFixed(2).replace('.', ',') : '';
+      const saldo = item.balance.toFixed(2).replace('.', ',');
+      const date = new Date(item.date).toLocaleDateString('pt-BR');
+      let detalhamento = item.desc;
+      if (item.clientName) detalhamento += ` (${item.clientName})`;
+      if (item.cat === '5' && item.carreteiroType) detalhamento += ` [${item.carreteiroType}]`;
+      
+      return [
+        date,
+        `"${entrada}"`,
+        `"${saida}"`,
+        `"${saldo}"`,
+        `"${catName}"`,
+        `"${detalhamento}"`,
+        `"${item.cte || ''}"`,
+        `"${bank ? bank.name : ''}"`
+      ].join(';');
+    });
+
+    const csvContent = [headers.join(';'), ...rows].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `fluxo_de_caixa_${exportPeriod.toLowerCase()}_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setShowExportModal(false);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    addTransaction({
-      date: formData.date,
+    if (formData.cat === '5') {
+      if (!formData.cte || !formData.carreteiroType) {
+        alert("Para despesas de carreteiro, o CTE e o Tipo de Lançamento são obrigatórios.");
+        return;
+      }
+    }
+
+    const baseTx = {
       type: modalType,
       value: parseFloat(formData.value),
       cat: formData.cat,
       desc: formData.desc,
-      status: 'EFETIVADO',
       bankAccountId: formData.bankAccountId,
       cte: formData.cte,
-      clientName: formData.clientName
-    });
+      clientName: formData.clientName,
+      carreteiroType: formData.carreteiroType as any
+    };
+
+    if (formData.isRecurring) {
+      for (let i = 0; i < 12; i++) {
+        const d = new Date(formData.dueDate || formData.date);
+        d.setMonth(d.getMonth() + i);
+        const dateStr = d.toISOString().split('T')[0];
+        addTransaction({
+          ...baseTx,
+          date: dateStr,
+          dueDate: dateStr,
+          isRecurring: true,
+          status: i === 0 ? formData.status as any : 'PENDENTE'
+        });
+      }
+    } else {
+      addTransaction({
+        ...baseTx,
+        date: formData.date,
+        dueDate: formData.dueDate,
+        status: formData.status as any
+      });
+    }
+
     setShowModal(false);
-    setFormData({ date: new Date().toISOString().split('T')[0], value: '', cat: '', desc: '', bankAccountId: selectedBankId, cte: '', clientName: '' });
+    setFormData({ date: new Date().toISOString().split('T')[0], dueDate: new Date().toISOString().split('T')[0], isRecurring: false, status: 'EFETIVADO', value: '', cat: '', desc: '', bankAccountId: selectedBankId, cte: '', clientName: '', carreteiroType: '' });
   };
 
   const openModal = (type: 'ENTRADA' | 'SAIDA') => {
@@ -201,7 +421,7 @@ const CashFlow = ({ transactions, bankAccounts, dreCategories, addTransaction, c
             <button onClick={() => openModal('SAIDA')} className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-bold shadow-md hover:opacity-90">
               <Plus size={16} /> Nova Despesa
             </button>
-            <button className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50">
+            <button onClick={() => setShowExportModal(true)} className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50" title="Exportar CSV">
               <Download size={18} className="text-gray-400" />
             </button>
           </div>
@@ -218,25 +438,136 @@ const CashFlow = ({ transactions, bankAccounts, dreCategories, addTransaction, c
                 <th className="px-4 py-4">Detalhamento</th>
                 <th className="px-4 py-4">CTe</th>
                 <th className="px-4 py-4">Banco/Caixa</th>
+                <th className="px-4 py-4 text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {transactionsWithBalance.map((item: any) => {
+              {displayedTransactions.map((item: any) => {
                 const bank = bankAccounts.find((b: any) => b.id === item.bankAccountId);
+                const isEditing = editingTxId === item.id;
+                
+                // Validate Carreteiro value
+                let isDivergent = false;
+                if (item.cat === '5' && item.cte && item.carreteiroType) {
+                  const cteRecord = ctes.find((c: any) => c.cteNumber === item.cte);
+                  if (cteRecord) {
+                    const expectedValue = 
+                      item.carreteiroType === 'Adiantamento' ? cteRecord.advanceValue :
+                      item.carreteiroType === 'Saldo' ? cteRecord.balanceValue :
+                      item.carreteiroType === 'Extra' ? cteRecord.extraValue :
+                      item.carreteiroType === 'Tributos sobre frete' ? cteRecord.taxesRetained : 0;
+                    
+                    if (item.value !== expectedValue) {
+                      isDivergent = true;
+                    }
+                  }
+                }
+
+                if (isEditing) {
+                  return (
+                    <tr key={item.id} className="bg-blue-50/30 text-sm">
+                      <td className="px-4 py-3">
+                        <input type="date" value={editData.date} onChange={e => setEditData({...editData, date: e.target.value})} className="w-full p-1 border border-gray-300 rounded text-xs" />
+                      </td>
+                      <td className="px-4 py-3">
+                        {editData.type === 'ENTRADA' && (
+                          <input type="number" step="0.01" value={editData.value} onChange={e => setEditData({...editData, value: parseFloat(e.target.value)})} className="w-full p-1 border border-gray-300 rounded text-xs" />
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {editData.type === 'SAIDA' && (
+                          <input type="number" step="0.01" value={editData.value} onChange={e => setEditData({...editData, value: parseFloat(e.target.value)})} className="w-full p-1 border border-gray-300 rounded text-xs" />
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-gray-400">-</td>
+                      <td className="px-4 py-3">
+                        <select value={editData.cat} onChange={e => setEditData({...editData, cat: e.target.value})} className="w-full p-1 border border-gray-300 rounded text-xs">
+                          {dreCategories.filter((c: any) => editData.type === 'ENTRADA' ? c.group.includes('RECEITA') : !c.group.includes('RECEITA')).map((c: any) => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-4 py-3">
+                        <input type="text" value={editData.desc} onChange={e => setEditData({...editData, desc: e.target.value})} className="w-full p-1 border border-gray-300 rounded text-xs" />
+                        {editData.cat === '5' && (
+                          <select value={editData.carreteiroType || ''} onChange={e => setEditData({...editData, carreteiroType: e.target.value})} className={`w-full mt-1 p-1 border ${!editData.carreteiroType ? 'border-red-500' : 'border-gray-300'} rounded text-xs text-red-600`}>
+                            <option value="">Tipo (Obrigatório)...</option>
+                            <option value="Adiantamento">Adiantamento</option>
+                            <option value="Saldo">Saldo</option>
+                            <option value="Extra">Extra</option>
+                            <option value="Tributos sobre frete">Tributos sobre frete</option>
+                          </select>
+                        )}
+                        <select value={editData.status} onChange={e => setEditData({...editData, status: e.target.value})} className="w-full mt-1 p-1 border border-gray-300 rounded text-xs font-bold">
+                          <option value="EFETIVADO">Efetivado</option>
+                          <option value="PENDENTE">Pendente</option>
+                        </select>
+                      </td>
+                      <td className="px-4 py-3">
+                        <input type="text" value={editData.cte || ''} onChange={e => setEditData({...editData, cte: e.target.value})} className={`w-full p-1 border ${editData.cat === '5' && !editData.cte ? 'border-red-500' : 'border-gray-300'} rounded text-xs`} placeholder={editData.cat === '5' ? "Nº CTE (Obrigatório)" : "Nº CTE"} />
+                      </td>
+                      <td className="px-4 py-3">
+                        <select value={editData.bankAccountId} onChange={e => setEditData({...editData, bankAccountId: e.target.value})} className="w-full p-1 border border-gray-300 rounded text-xs">
+                          {bankAccounts.map((b: any) => (
+                            <option key={b.id} value={b.id}>{b.name}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex justify-end gap-1">
+                          <button onClick={handleSaveEdit} className="p-1 text-emerald-600 hover:bg-emerald-100 rounded" title="Salvar"><CheckCircle size={16} /></button>
+                          <button onClick={handleCancelEdit} className="p-1 text-red-600 hover:bg-red-100 rounded" title="Cancelar"><X size={16} /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
+
+                const isPendente = item.status === 'PENDENTE';
+
                 return (
-                  <tr key={item.id} className="hover:bg-gray-50/50 transition-colors text-sm">
-                    <td className="px-4 py-3 text-gray-500 italic">{new Date(item.date).toLocaleDateString('pt-BR')}</td>
+                  <tr key={item.id} className={`hover:bg-gray-50/50 transition-colors text-sm ${isDivergent ? 'bg-red-50' : ''} ${isPendente ? 'opacity-60 bg-yellow-50/30' : ''}`}>
+                    <td className="px-4 py-3 text-gray-500 italic">
+                      {new Date(item.date).toLocaleDateString('pt-BR')}
+                      {isPendente && <span className="block text-[10px] text-yellow-600 font-bold uppercase mt-1">Pendente</span>}
+                    </td>
                     <td className="px-4 py-3 font-bold text-emerald-600">{item.type === 'ENTRADA' ? formatCurrency(item.value) : '-'}</td>
-                    <td className="px-4 py-3 font-bold text-red-600">{item.type === 'SAIDA' ? formatCurrency(item.value) : '-'}</td>
+                    <td className={`px-4 py-3 font-bold ${isDivergent ? 'text-red-700' : 'text-red-600'}`}>{item.type === 'SAIDA' ? formatCurrency(item.value) : '-'}</td>
                     <td className={`px-4 py-3 font-bold ${item.balance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(item.balance)}</td>
                     <td className="px-4 py-3">
-                      <span className="text-[10px] px-2 py-1 bg-gray-100 rounded-full text-gray-600 font-bold uppercase">
+                      <span className={`text-[10px] px-2 py-1 rounded-full font-bold uppercase ${isDivergent ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-600'}`}>
                         {dreCategories.find((c: any) => c.id === item.cat) ? dreCategories.find((c: any) => c.id === item.cat)?.name : item.cat}
                       </span>
                     </td>
-                    <td className="px-4 py-3 font-medium text-gray-800">{item.desc} {item.clientName ? `(${item.clientName})` : ''}</td>
+                    <td className="px-4 py-3 font-medium text-gray-800">
+                      {item.desc} {item.clientName ? `(${item.clientName})` : ''}
+                      {item.cat === '5' && item.carreteiroType && (
+                        <span className="ml-2 text-xs text-red-600 font-bold">[{item.carreteiroType}]</span>
+                      )}
+                      {isDivergent && (
+                        <span className="block text-xs text-red-600 font-bold mt-1">Divergência com CTE</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-gray-500">{item.cte || '-'}</td>
                     <td className="px-4 py-3 text-gray-600 font-medium">{bank ? bank.name : '-'}</td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex justify-end gap-1">
+                        {isPendente && (
+                          <button onClick={() => updateTransaction({...item, status: 'EFETIVADO'})} className="p-1 text-emerald-600 hover:bg-emerald-100 rounded transition-colors" title="Efetivar">
+                            <CheckCircle size={16} />
+                          </button>
+                        )}
+                        <button onClick={() => handleMove(item, 'UP')} className="p-1 text-gray-400 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors" title="Mover para cima">
+                          <ArrowUp size={16} />
+                        </button>
+                        <button onClick={() => handleMove(item, 'DOWN')} className="p-1 text-gray-400 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors" title="Mover para baixo">
+                          <ArrowDown size={16} />
+                        </button>
+                        <button onClick={() => handleEditClick(item)} className="p-1 text-blue-600 hover:bg-blue-100 rounded transition-colors" title="Editar">
+                          <FileSpreadsheet size={16} />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 );
               })}
@@ -250,6 +581,88 @@ const CashFlow = ({ transactions, bankAccounts, dreCategories, addTransaction, c
         </div>
       </div>
 
+      {/* Modal Exportar */}
+      {showExportModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold text-gray-800">Exportar Fluxo de Caixa</h3>
+              <button onClick={() => setShowExportModal(false)} className="text-gray-400 hover:text-gray-600"><X size={24} /></button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Período de Exportação</label>
+                <select 
+                  className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-bordeaux focus:border-transparent"
+                  value={exportPeriod} onChange={e => setExportPeriod(e.target.value as any)}
+                >
+                  <option value="MONTH">Mês Específico</option>
+                  <option value="YEAR">Ano Inteiro</option>
+                  <option value="CUSTOM">Período Personalizado</option>
+                </select>
+              </div>
+
+              {exportPeriod === 'MONTH' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Mês</label>
+                    <select 
+                      className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-bordeaux focus:border-transparent"
+                      value={exportMonth} onChange={e => setExportMonth(parseInt(e.target.value))}
+                    >
+                      {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+                        <option key={m} value={m}>{new Date(2000, m - 1).toLocaleString('pt-BR', { month: 'long' })}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Ano</label>
+                    <input 
+                      type="number" className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-bordeaux focus:border-transparent"
+                      value={exportYear} onChange={e => setExportYear(parseInt(e.target.value))}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {exportPeriod === 'YEAR' && (
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Ano</label>
+                  <input 
+                    type="number" className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-bordeaux focus:border-transparent"
+                    value={exportYear} onChange={e => setExportYear(parseInt(e.target.value))}
+                  />
+                </div>
+              )}
+
+              {exportPeriod === 'CUSTOM' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Data Inicial</label>
+                    <input 
+                      type="date" className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-bordeaux focus:border-transparent"
+                      value={exportStartDate} onChange={e => setExportStartDate(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Data Final</label>
+                    <input 
+                      type="date" className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-bordeaux focus:border-transparent"
+                      value={exportEndDate} onChange={e => setExportEndDate(e.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 mt-6">
+                <button type="button" onClick={() => setShowExportModal(false)} className="px-4 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded-lg">Cancelar</button>
+                <button onClick={exportToCSV} className="px-4 py-2 bg-bordeaux text-white font-bold rounded-lg hover:bg-red-900 shadow-md">Exportar CSV</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal Novo Lançamento */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -259,14 +672,33 @@ const CashFlow = ({ transactions, bankAccounts, dreCategories, addTransaction, c
               <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600"><X size={24} /></button>
             </div>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Data</label>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Status</label>
+                  <select 
+                    className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-bordeaux focus:border-transparent"
+                    value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} required
+                  >
+                    <option value="EFETIVADO">Efetivado (No Extrato)</option>
+                    <option value="PENDENTE">Pendente (A Pagar/Receber)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Data de Lançamento</label>
                   <input 
                     type="date" className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-bordeaux focus:border-transparent"
                     value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} required
                   />
                 </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Data de Vencimento</label>
+                  <input 
+                    type="date" className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-bordeaux focus:border-transparent"
+                    value={formData.dueDate} onChange={e => setFormData({...formData, dueDate: e.target.value})} required
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Valor (R$)</label>
                   <input 
@@ -293,6 +725,18 @@ const CashFlow = ({ transactions, bankAccounts, dreCategories, addTransaction, c
                     <option value="">Selecione...</option>
                     {dreCategories.filter((c: any) => modalType === 'ENTRADA' ? c.group.includes('RECEITA') : !c.group.includes('RECEITA')).map((c: any) => <option key={c.id} value={c.id}>{c.name} ({c.group})</option>)}
                   </select>
+                </div>
+                <div className="flex items-center mt-6">
+                  <input 
+                    type="checkbox" 
+                    id="isRecurring"
+                    className="w-4 h-4 text-bordeaux border-gray-300 rounded focus:ring-bordeaux"
+                    checked={formData.isRecurring} 
+                    onChange={e => setFormData({...formData, isRecurring: e.target.checked})} 
+                  />
+                  <label htmlFor="isRecurring" className="ml-2 block text-sm font-bold text-gray-700">
+                    Lançamento Recorrente (12 meses)
+                  </label>
                 </div>
                 {modalType === 'ENTRADA' ? (
                   <div>
@@ -323,12 +767,32 @@ const CashFlow = ({ transactions, bankAccounts, dreCategories, addTransaction, c
                   />
                 </div>
                 <div className="col-span-2">
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">CTe (Opcional)</label>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
+                    CTe {formData.cat === '5' ? <span className="text-red-500">*</span> : '(Opcional)'}
+                  </label>
                   <input 
                     type="text" className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-bordeaux focus:border-transparent"
                     value={formData.cte} onChange={e => setFormData({...formData, cte: e.target.value})}
+                    required={formData.cat === '5'}
                   />
                 </div>
+                {formData.cat === '5' && (
+                  <div className="col-span-2">
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Tipo de Lançamento Carreteiro <span className="text-red-500">*</span></label>
+                    <select
+                      className="w-full p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-bordeaux focus:border-transparent"
+                      value={formData.carreteiroType || ''}
+                      onChange={e => setFormData({...formData, carreteiroType: e.target.value})}
+                      required
+                    >
+                      <option value="">Selecione...</option>
+                      <option value="Adiantamento">Adiantamento</option>
+                      <option value="Saldo">Saldo</option>
+                      <option value="Extra">Extra</option>
+                      <option value="Tributos sobre frete">Tributos sobre frete</option>
+                    </select>
+                  </div>
+                )}
               </div>
               <div className="flex justify-end gap-3 mt-6">
                 <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded-lg">Cancelar</button>
@@ -343,9 +807,14 @@ const CashFlow = ({ transactions, bankAccounts, dreCategories, addTransaction, c
 };
 
 // --- Payment Orders Component ---
-const PaymentOrders = ({ transactions, updateTransaction, bankAccounts, dreCategories }: any) => {
+const PaymentOrders = ({ transactions, updateTransaction, bankAccounts, dreCategories, ctes, selectedMonth, selectedYear }: any) => {
   const [payingTx, setPayingTx] = useState<any>(null);
   const [payData, setPayData] = useState({ bankAccountId: '', date: new Date().toISOString().split('T')[0] });
+
+  const displayedTransactions = transactions.filter((t: any) => {
+    const d = new Date(t.dueDate || t.date);
+    return (d.getMonth() + 1) === selectedMonth && d.getFullYear() === selectedYear;
+  });
 
   const handlePay = (e: React.FormEvent) => {
     e.preventDefault();
@@ -358,6 +827,27 @@ const PaymentOrders = ({ transactions, updateTransaction, bankAccounts, dreCateg
       });
       setPayingTx(null);
     }
+  };
+
+  const handleCancelOrder = (tx: any) => {
+    updateTransaction({
+      ...tx,
+      status: 'CANCELADO'
+    });
+  };
+
+  const isTransactionCancelled = (tx: any) => {
+    if (tx.cte) {
+      const relatedCte = ctes.find((c: any) => c.cteNumber === tx.cte);
+      if (relatedCte && relatedCte.status === 'CANCELADO') return true;
+    }
+    const loadIdMatch = tx.desc.match(/Carga #(\w+)/);
+    if (loadIdMatch) {
+      const loadId = loadIdMatch[1];
+      const relatedCte = ctes.find((c: any) => c.loadId === loadId);
+      if (relatedCte && relatedCte.status === 'CANCELADO') return true;
+    }
+    return false;
   };
 
   return (
@@ -378,31 +868,53 @@ const PaymentOrders = ({ transactions, updateTransaction, bankAccounts, dreCateg
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {transactions.map((item: any) => (
-              <tr key={item.id} className="hover:bg-gray-50/50 transition-colors">
-                <td className="px-6 py-4 text-sm text-gray-500 italic">{new Date(item.date).toLocaleDateString('pt-BR')}</td>
-                <td className="px-6 py-4 font-bold text-gray-800">{item.desc}</td>
-                <td className="px-6 py-4">
-                  <span className="text-[10px] px-2 py-1 bg-gray-100 rounded-full text-gray-500 font-bold uppercase tracking-widest">
-                    {dreCategories.find((c: any) => c.id === item.cat) ? dreCategories.find((c: any) => c.id === item.cat)?.name : item.cat}
-                  </span>
-                </td>
-                <td className="px-6 py-4 font-bold text-red-600">
-                  {formatCurrency(item.value)}
-                </td>
-                <td className="px-6 py-4 text-center">
-                  <button 
-                    onClick={() => setPayingTx(item)}
-                    className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-bold hover:bg-emerald-100 transition-colors"
-                  >
-                    <CheckCircle size={14} /> Efetivar Pagamento
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {transactions.length === 0 && (
+            {displayedTransactions.map((item: any) => {
+              const cteCancelled = isTransactionCancelled(item);
+              const isOrderCancelled = item.status === 'CANCELADO';
+              const cancelled = cteCancelled || isOrderCancelled;
+              return (
+                <tr key={item.id} className={`hover:bg-gray-50/50 transition-colors ${cancelled ? 'opacity-50' : ''}`}>
+                  <td className="px-6 py-4 text-sm text-gray-500 italic">{new Date(item.date).toLocaleDateString('pt-BR')}</td>
+                  <td className="px-6 py-4 font-bold text-gray-800">
+                    {item.desc}
+                    {cteCancelled && !isOrderCancelled && <span className="ml-2 text-[10px] px-2 py-1 bg-red-100 text-red-800 rounded-full uppercase tracking-widest">CTE Cancelado</span>}
+                    {isOrderCancelled && <span className="ml-2 text-[10px] px-2 py-1 bg-gray-200 text-gray-600 rounded-full uppercase tracking-widest">Ordem Cancelada</span>}
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className="text-[10px] px-2 py-1 bg-gray-100 rounded-full text-gray-500 font-bold uppercase tracking-widest">
+                      {dreCategories.find((c: any) => c.id === item.cat) ? dreCategories.find((c: any) => c.id === item.cat)?.name : item.cat}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 font-bold text-red-600">
+                    {formatCurrency(item.value)}
+                  </td>
+                  <td className="px-6 py-4 text-center">
+                    <div className="flex items-center justify-center gap-2">
+                      <button 
+                        onClick={() => setPayingTx(item)}
+                        disabled={cancelled}
+                        className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${cancelled ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'}`}
+                        title="Efetivar Pagamento"
+                      >
+                        <CheckCircle size={14} /> Efetivar
+                      </button>
+                      {!isOrderCancelled && (
+                        <button
+                          onClick={() => handleCancelOrder(item)}
+                          className="inline-flex items-center gap-2 px-3 py-1.5 bg-red-50 text-red-700 rounded-lg text-xs font-bold hover:bg-red-100 transition-colors"
+                          title="Cancelar Ordem"
+                        >
+                          <X size={14} /> Cancelar
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+            {displayedTransactions.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-6 py-8 text-center text-gray-500 italic">Nenhuma ordem de pagamento pendente.</td>
+                <td colSpan={5} className="px-6 py-8 text-center text-gray-500 italic">Nenhuma ordem de pagamento pendente para este mês.</td>
               </tr>
             )}
           </tbody>

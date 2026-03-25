@@ -1,0 +1,135 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the system",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "name": { "type": "string", "description": "User's full name" },
+        "email": { "type": "string", "format": "email", "description": "User's email address" },
+        "role": { "type": "string", "enum": ["Administrador", "Comercial", "Operacional", "Financeiro", "Cliente"], "description": "User's role" },
+        "status": { "type": "string", "enum": ["Ativo", "Inativo"], "description": "User's status" },
+        "ownerId": { "type": "string", "description": "Company ID the user belongs to" },
+        "customerId": { "type": "string", "description": "ID of the customer if role is Cliente" }
+      },
+      "required": ["uid", "name", "email", "role", "status", "ownerId"]
+    },
+    "Load": {
+      "title": "Load",
+      "description": "A freight load",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "customer": { "type": "string" },
+        "origin": { "type": "string" },
+        "destination": { "type": "string" },
+        "value": { "type": "number" },
+        "cost": { "type": "number" },
+        "status": { "type": "string", "enum": ["AGUARDANDO", "EM VIAGEM", "ENTREGUE"] },
+        "driverId": { "type": "string" },
+        "vehicleId": { "type": "string" },
+        "observation": { "type": "string" },
+        "documentUrl": { "type": "string", "description": "URL of the attached document" }
+      },
+      "required": ["id", "ownerId", "date", "customer", "origin", "destination", "value", "cost", "status"]
+    },
+    "Client": {
+      "title": "Client",
+      "description": "A client company",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "cnpj": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "phone": { "type": "string" },
+        "status": { "type": "string", "enum": ["Ativo", "Inativo"] },
+        "ownerId": { "type": "string" }
+      },
+      "required": ["id", "name", "cnpj", "email", "phone", "status", "ownerId"]
+    },
+    "Driver": {
+      "title": "Driver",
+      "description": "A truck driver",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "cpf": { "type": "string" },
+        "phone": { "type": "string" },
+        "cnh": { "type": "string" },
+        "vehicleId": { "type": "string" },
+        "status": { "type": "string", "enum": ["Disponível", "Em Viagem", "Férias", "Afastado"] },
+        "ownerId": { "type": "string" }
+      },
+      "required": ["id", "name", "cpf", "phone", "cnh", "vehicleId", "status", "ownerId"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "A financial transaction",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "description": { "type": "string" },
+        "amount": { "type": "number" },
+        "type": { "type": "string", "enum": ["Receita", "Despesa"] },
+        "category": { "type": "string" },
+        "status": { "type": "string", "enum": ["Pendente", "Pago", "Recebido", "Atrasado"] },
+        "bankAccountId": { "type": "string" },
+        "loadId": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "carreteiroType": { "type": "string" },
+        "orderIndex": { "type": "number" },
+        "documentUrl": { "type": "string", "description": "URL of the attached document" }
+      },
+      "required": ["id", "date", "description", "amount", "type", "category", "status", "bankAccountId", "ownerId"]
+    },
+    "CteRecord": {
+      "title": "CteRecord",
+      "description": "A CTE record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "loadId": { "type": "string" },
+        "cteNumber": { "type": "string" },
+        "emissionDate": { "type": "string", "format": "date" },
+        "cteValue": { "type": "number" },
+        "status": { "type": "string", "enum": ["Emitido", "Cancelado", "Averbado"] },
+        "ownerId": { "type": "string" },
+        "documentUrl": { "type": "string", "description": "URL of the attached CTE document" }
+      },
+      "required": ["id", "loadId", "cteNumber", "emissionDate", "cteValue", "status", "ownerId"]
+    }
+  },
+  "firestore": {
+    "users": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Collection of users"
+    },
+    "loads": {
+      "schema": { "$ref": "#/entities/Load" },
+      "description": "Collection of freight loads"
+    },
+    "clients": {
+      "schema": { "$ref": "#/entities/Client" },
+      "description": "Collection of clients"
+    },
+    "drivers": {
+      "schema": { "$ref": "#/entities/Driver" },
+      "description": "Collection of drivers"
+    },
+    "transactions": {
+      "schema": { "$ref": "#/entities/Transaction" },
+      "description": "Collection of financial transactions"
+    },
+    "ctes": {
+      "schema": { "$ref": "#/entities/CteRecord" },
+      "description": "Collection of CTE records"
+    }
+  }
+}

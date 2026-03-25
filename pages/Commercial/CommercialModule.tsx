@@ -32,9 +32,11 @@ interface ExtraExpense {
 const CommercialModule: React.FC<CommercialModuleProps> = ({ loads, addLoad, updateLoad, deleteLoad, clients, drivers, goToProgramming }) => {
   const { activeCompany, getCompanyBadge } = useCompany();
   const [activeTab, setActiveTab] = useState<MainTab>('Kanban');
+  const [searchTerm, setSearchTerm] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [activeFormTab, setActiveFormTab] = useState<FormTab>('Cliente');
   const [draggedLoadId, setDraggedLoadId] = useState<string | null>(null);
+  const [lostReasonModal, setLostReasonModal] = useState<{ isOpen: boolean; loadId: string; reason: string }>({ isOpen: false, loadId: '', reason: '' });
   
   // Menu de ações
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -82,6 +84,7 @@ const CommercialModule: React.FC<CommercialModuleProps> = ({ loads, addLoad, upd
     { id: 'AGUARDANDO PROGRAMAÇÃO', label: 'EM PROGRAMAÇÃO', color: 'border-purple-400' },
     { id: 'EM TRÂNSITO', label: 'PROGRAMADA / EM TRÂNSITO', color: 'border-indigo-400' },
     { id: 'ENTREGUE', label: 'FINALIZADA / ENTREGUE', color: 'border-gray-400' },
+    { id: 'PERDIDO', label: 'PERDIDO', color: 'border-red-400' },
   ];
 
   const onDragStart = (e: React.DragEvent, id: string) => {
@@ -94,15 +97,28 @@ const CommercialModule: React.FC<CommercialModuleProps> = ({ loads, addLoad, upd
     const id = e.dataTransfer.getData('loadId');
     const loadToUpdate = loads.find(l => l.id === id);
     if (loadToUpdate && loadToUpdate.status !== newStatus) {
-      updateLoad({ ...loadToUpdate, status: newStatus });
+      if (newStatus === 'PERDIDO') {
+        setLostReasonModal({ isOpen: true, loadId: id, reason: '' });
+      } else {
+        updateLoad({ ...loadToUpdate, status: newStatus });
+      }
     }
+  };
+
+  const handleLostReasonSubmit = () => {
+    const loadToUpdate = loads.find(l => l.id === lostReasonModal.loadId);
+    if (loadToUpdate) {
+      updateLoad({ ...loadToUpdate, status: 'PERDIDO', lostReason: lostReasonModal.reason, lostBy: 'Comercial' });
+    }
+    setLostReasonModal({ isOpen: false, loadId: '', reason: '' });
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedClient) return;
     const selectedDriver = drivers.find(d => d.id === formData.finance.selectedDriverId);
-    let targetStatus: LoadStatus = 'AGUARDANDO PROGRAMAÇÃO';
+    const existing = editingLoadId ? loads.find(l => l.id === editingLoadId) : null;
+    let targetStatus: LoadStatus = existing ? existing.status : 'AGUARDANDO PROGRAMAÇÃO';
 
     const payload = {
       customer: selectedClient.name,
@@ -120,9 +136,8 @@ const CommercialModule: React.FC<CommercialModuleProps> = ({ loads, addLoad, upd
       status: targetStatus
     };
 
-    if (editingLoadId) {
-      const existing = loads.find(l => l.id === editingLoadId);
-      if (existing) updateLoad({ ...existing, ...payload });
+    if (existing) {
+      updateLoad({ ...existing, ...payload });
     } else {
       addLoad(payload);
     }
@@ -146,19 +161,39 @@ const CommercialModule: React.FC<CommercialModuleProps> = ({ loads, addLoad, upd
         </button>
       </div>
 
-      <div className="flex border-b border-gray-200 bg-white rounded-t-3xl shadow-sm px-6">
-        {(['Minhas Cargas', 'Kanban', 'Radar de Leads'] as MainTab[]).map((tab) => (
-          <button key={tab} onClick={() => setActiveTab(tab)} className={`px-8 py-5 font-black text-xs uppercase tracking-widest transition-all border-b-4 ${activeTab === tab ? 'border-bordeaux text-bordeaux bg-bordeaux/5' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
-            {tab}
-          </button>
-        ))}
+      <div className="flex border-b border-gray-200 bg-white rounded-t-3xl shadow-sm px-6 justify-between items-center">
+        <div className="flex">
+          {(['Minhas Cargas', 'Kanban', 'Radar de Leads'] as MainTab[]).map((tab) => (
+            <button key={tab} onClick={() => setActiveTab(tab)} className={`px-8 py-5 font-black text-xs uppercase tracking-widest transition-all border-b-4 ${activeTab === tab ? 'border-bordeaux text-bordeaux bg-bordeaux/5' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
+              {tab}
+            </button>
+          ))}
+        </div>
+        {(activeTab === 'Minhas Cargas' || activeTab === 'Kanban') && (
+          <div className="relative w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+            <input 
+              type="text" 
+              placeholder="Buscar cliente, origem, CTE..." 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-bordeaux/20 outline-none transition-all"
+            />
+          </div>
+        )}
       </div>
 
       <div className="bg-[#F9F9F9] rounded-b-3xl shadow-sm border border-gray-100 min-h-[700px] overflow-hidden p-6">
         {activeTab === 'Kanban' ? (
           <div className="flex gap-4 overflow-x-auto pb-4 h-full scrollbar-thin scrollbar-thumb-bordeaux/20">
             {columns.map(col => {
-              const columnLoads = loads.filter(l => l.status === col.id);
+              const columnLoads = loads.filter(l => 
+                l.status === col.id && 
+                (l.customer.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                 l.origin.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                 l.destination.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                 (l.cteNumber && l.cteNumber.includes(searchTerm)))
+              );
               return (
                 <div key={col.id} className="flex flex-col min-w-[300px] w-[300px] bg-gray-50 rounded-3xl border border-gray-200" onDragOver={e => e.preventDefault()} onDrop={e => onDrop(e, col.id)}>
                   <div className="bg-bordeaux text-white p-4 rounded-t-3xl flex justify-between items-center shadow-md">
@@ -202,13 +237,24 @@ const CommercialModule: React.FC<CommercialModuleProps> = ({ loads, addLoad, upd
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {loads.length > 0 ? (
-                    loads.map((load) => (
+                  {loads.filter(l => 
+                    l.customer.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                    l.origin.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                    l.destination.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    (l.cteNumber && l.cteNumber.includes(searchTerm))
+                  ).length > 0 ? (
+                    loads.filter(l => 
+                      l.customer.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                      l.origin.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                      l.destination.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      (l.cteNumber && l.cteNumber.includes(searchTerm))
+                    ).map((load) => (
                       <tr key={load.id} className="hover:bg-bordeaux/[0.02] transition-colors group">
                         <td className="px-6 py-5">
                           <div className="flex flex-col">
                             <span className="text-xs font-black text-gray-700">{new Date(load.date).toLocaleDateString('pt-BR')}</span>
                             <span className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter">#{load.id}</span>
+                            {load.cteNumber && <span className="text-[9px] font-bold text-bordeaux uppercase tracking-tighter">CTE: {load.cteNumber}</span>}
                           </div>
                         </td>
                         <td className="px-6 py-5">
@@ -1095,6 +1141,49 @@ const CommercialModule: React.FC<CommercialModuleProps> = ({ loads, addLoad, upd
                     Efetivar Carga
                   </button>
                 )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal de Motivo de Perda */}
+      {lostReasonModal.isOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-[32px] w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+            <div className="px-8 py-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+              <h2 className="text-xl font-black text-gray-900 tracking-tight flex items-center gap-3">
+                <AlertCircle size={24} className="text-red-600" />
+                Motivo da Perda
+              </h2>
+              <button onClick={() => setLostReasonModal({ isOpen: false, loadId: '', reason: '' })} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-xl transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-8 space-y-6">
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Por que essa proposta foi perdida?</label>
+                <textarea
+                  value={lostReasonModal.reason}
+                  onChange={(e) => setLostReasonModal({ ...lostReasonModal, reason: e.target.value })}
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-600 focus:border-transparent outline-none transition-all resize-none h-32"
+                  placeholder="Ex: Preço alto, cliente fechou com concorrente, etc..."
+                  required
+                />
+              </div>
+              <div className="flex justify-end gap-3 pt-4">
+                <button
+                  onClick={() => setLostReasonModal({ isOpen: false, loadId: '', reason: '' })}
+                  className="px-6 py-3 text-sm font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleLostReasonSubmit}
+                  disabled={!lostReasonModal.reason.trim()}
+                  className="px-6 py-3 text-sm font-bold text-white bg-red-600 hover:bg-red-700 rounded-xl transition-colors shadow-lg shadow-red-600/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Confirmar Perda
+                </button>
               </div>
             </div>
           </div>

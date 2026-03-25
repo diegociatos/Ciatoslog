@@ -6,15 +6,16 @@ import {
   Phone, Mail, ShieldCheck, Calendar, Wallet, Users, Edit2, Lock, 
   Unlock, Trash2, ChevronRight, Globe, TrendingUp, Sparkles, MapPinned, FileUp
 } from 'lucide-react';
-import { Driver, VehicleType, RouteEntry } from '../../App';
+import { Driver, VehicleType, RouteEntry, User } from '../../App';
 
 interface DriversModuleProps {
   drivers: Driver[];
   setDrivers: React.Dispatch<React.SetStateAction<Driver[]>>;
   vehicleTypes: VehicleType[];
+  currentUser: User;
 }
 
-const DriversModule: React.FC<DriversModuleProps> = ({ drivers, setDrivers, vehicleTypes }) => {
+const DriversModule: React.FC<DriversModuleProps> = ({ drivers, setDrivers, vehicleTypes, currentUser }) => {
   const [showModal, setShowModal] = useState(false);
   const [showRouteModal, setShowRouteModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -230,9 +231,11 @@ const DriversModule: React.FC<DriversModuleProps> = ({ drivers, setDrivers, vehi
                           {driver.status === 'Bloqueado' ? <><Unlock size={16} className="text-emerald-500" /><span className="text-xs font-black uppercase text-emerald-600 tracking-widest">Desbloquear</span></> : <><Lock size={16} className="text-red-500" /><span className="text-xs font-black uppercase text-red-600 tracking-widest">Bloquear Operador</span></>}
                         </button>
                         <div className="h-[1px] bg-gray-100 w-full"></div>
-                        <button onClick={() => { if(window.confirm('Excluir parceiro?')) setDrivers(drivers.filter(d => d.id !== driver.id)); setOpenMenuId(null); }} className="w-full px-6 py-4 flex items-center gap-3 text-left hover:bg-red-50 transition-colors group">
-                          <Trash2 size={16} className="text-red-400" /><span className="text-xs font-black uppercase text-red-600 tracking-widest">Excluir Parceiro</span>
-                        </button>
+                        {currentUser.role === 'Administrador' && (
+                          <button onClick={() => { if(window.confirm('Excluir parceiro?')) setDrivers(drivers.filter(d => d.id !== driver.id)); setOpenMenuId(null); }} className="w-full px-6 py-4 flex items-center gap-3 text-left hover:bg-red-50 transition-colors group">
+                            <Trash2 size={16} className="text-red-400" /><span className="text-xs font-black uppercase text-red-600 tracking-widest">Excluir Parceiro</span>
+                          </button>
+                        )}
                       </div>
                     )}
                   </td>
@@ -343,12 +346,14 @@ const DriversModule: React.FC<DriversModuleProps> = ({ drivers, setDrivers, vehi
                          <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-200 pb-2 italic">Identificação Básica</h4>
                          <div className="space-y-4">
                             <div className="grid grid-cols-2 gap-2 p-1 bg-gray-100 rounded-xl">
-                               <button onClick={() => setFormData({...formData, type: 'PF'})} className={`py-2 rounded-lg font-black text-[10px] uppercase tracking-widest transition-all ${formData.type === 'PF' ? 'bg-white text-bordeaux shadow-sm' : 'text-gray-400'}`}>Pessoa Física</button>
-                               <button onClick={() => setFormData({...formData, type: 'PJ'})} className={`py-2 rounded-lg font-black text-[10px] uppercase tracking-widest transition-all ${formData.type === 'PJ' ? 'bg-white text-bordeaux shadow-sm' : 'text-gray-400'}`}>Pessoa Jurídica</button>
+                               <button disabled={!!selectedDriverId} onClick={() => setFormData({...formData, type: 'PF'})} className={`py-2 rounded-lg font-black text-[10px] uppercase tracking-widest transition-all ${formData.type === 'PF' ? 'bg-white text-bordeaux shadow-sm' : 'text-gray-400'} ${!!selectedDriverId ? 'opacity-50 cursor-not-allowed' : ''}`}>Pessoa Física</button>
+                               <button disabled={!!selectedDriverId} onClick={() => setFormData({...formData, type: 'PJ'})} className={`py-2 rounded-lg font-black text-[10px] uppercase tracking-widest transition-all ${formData.type === 'PJ' ? 'bg-white text-bordeaux shadow-sm' : 'text-gray-400'} ${!!selectedDriverId ? 'opacity-50 cursor-not-allowed' : ''}`}>Pessoa Jurídica</button>
                             </div>
-                            <Input label="Nome Completo / Razão" value={formData.name || ''} onChange={(e:any) => setFormData({...formData, name: e.target.value})} />
-                            <Input label="CPF / CNPJ" value={formData.cnpj_cpf || ''} onChange={(e:any) => setFormData({...formData, cnpj_cpf: e.target.value})} />
-                            <Input label="Celular / WhatsApp" value={formData.phone || ''} onChange={(e:any) => setFormData({...formData, phone: e.target.value})} />
+                            <Input disabled={!!selectedDriverId} label="Nome Completo / Razão" value={formData.name || ''} onChange={(e:any) => setFormData({...formData, name: e.target.value})} />
+                            <Input disabled={!!selectedDriverId} label="CPF / CNPJ" value={formData.cnpj_cpf || ''} onChange={(e:any) => setFormData({...formData, cnpj_cpf: e.target.value})} />
+                            <Input disabled={!!selectedDriverId} label="Celular / WhatsApp (Principal)" value={formData.phone || ''} onChange={(e:any) => setFormData({...formData, phone: e.target.value})} />
+                            <Input label="Telefone Adicional" value={formData.phone2 || ''} onChange={(e:any) => setFormData({...formData, phone2: e.target.value})} />
+                            <Input label="E-mail" value={formData.email || ''} onChange={(e:any) => setFormData({...formData, email: e.target.value})} />
                          </div>
                       </div>
 
@@ -384,13 +389,13 @@ const DriversModule: React.FC<DriversModuleProps> = ({ drivers, setDrivers, vehi
                          <div className="space-y-4">
                             <div className="space-y-1">
                                <label className="text-[10px] font-black text-gray-500 uppercase block pl-1">Tipo de Veículo</label>
-                               <select value={formData.vehicleType} onChange={e => setFormData({...formData, vehicleType: e.target.value})} className="w-full px-5 py-3 bg-white border border-gray-200 rounded-xl font-black text-gray-800 outline-none">
+                               <select disabled={!!selectedDriverId} value={formData.vehicleType} onChange={e => setFormData({...formData, vehicleType: e.target.value})} className={`w-full px-5 py-3 border border-gray-200 rounded-xl font-black text-gray-800 outline-none ${!!selectedDriverId ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white'}`}>
                                   <option value="">Selecione...</option>
                                   {vehicleTypes.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
                                </select>
                             </div>
-                            <Input label="Placa" value={formData.plate || ''} onChange={(e:any) => setFormData({...formData, plate: e.target.value.toUpperCase()})} />
-                            <Input label="ANTT (RNTRC)" value={formData.antt || ''} onChange={(e:any) => setFormData({...formData, antt: e.target.value})} />
+                            <Input disabled={!!selectedDriverId} label="Placa" value={formData.plate || ''} onChange={(e:any) => setFormData({...formData, plate: e.target.value.toUpperCase()})} />
+                            <Input disabled={!!selectedDriverId} label="ANTT (RNTRC)" value={formData.antt || ''} onChange={(e:any) => setFormData({...formData, antt: e.target.value})} />
                          </div>
                       </div>
 
@@ -455,10 +460,10 @@ const DriversModule: React.FC<DriversModuleProps> = ({ drivers, setDrivers, vehi
   );
 };
 
-const Input = ({ label, value, onChange }: any) => (
+const Input = ({ label, value, onChange, disabled }: any) => (
   <div className="space-y-1">
     <label className="text-[10px] font-black text-gray-500 uppercase block pl-1">{label}</label>
-    <input value={value} onChange={onChange} className="w-full px-5 py-3 bg-white border border-gray-200 rounded-xl font-black text-gray-800 focus:ring-4 focus:ring-bordeaux/5 outline-none transition-all shadow-sm" />
+    <input disabled={disabled} value={value} onChange={onChange} className={`w-full px-5 py-3 border border-gray-200 rounded-xl font-black text-gray-800 focus:ring-4 focus:ring-bordeaux/5 outline-none transition-all shadow-sm ${disabled ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white'}`} />
   </div>
 );
 

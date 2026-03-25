@@ -6,7 +6,7 @@ import {
   DollarSign, AlertCircle, ShieldCheck, ShieldAlert, ChevronRight,
   Flag, FileText, Weight, Layers, ArrowRightLeft, Trophy, History,
   MinusCircle, PlusCircle, Receipt, Scale, Package, Info, Edit3, RefreshCcw,
-  Building2, Target, ClipboardList, Phone, UserCheck, Briefcase, HardDrive, Paperclip
+  Building2, Target, ClipboardList, Phone, UserCheck, Briefcase, HardDrive, Paperclip, Upload
 } from 'lucide-react';
 import { Load, Driver, useCompany, Transaction, User as UserType } from '../../App';
 
@@ -21,6 +21,7 @@ interface ProgrammingModuleProps {
 const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad, drivers, addTransaction, currentUser }) => {
   const { activeCompany, getCompanyBadge } = useCompany();
   const [activeTab, setActiveTab] = useState<'Aguardando' | 'EmTransito'>('Aguardando');
+  const [searchLoadTerm, setSearchLoadTerm] = useState('');
   const [programmingLoad, setProgrammingLoad] = useState<Load | null>(null);
   
   // Estados de Negociação
@@ -49,7 +50,9 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
 
   // Estados de Anexo de Documentos
   const [uploadingDocsLoad, setUploadingDocsLoad] = useState<Load | null>(null);
-  const [docUrls, setDocUrls] = useState({ cte: '', ciot: '', contract: '' });
+  const [docs, setDocs] = useState<{ cte: File | null, ciot: File | null, contract: File | null }>({ cte: null, ciot: null, contract: null });
+
+  const [lostReasonModal, setLostReasonModal] = useState<{ isOpen: boolean; loadId: string; reason: string }>({ isOpen: false, loadId: '', reason: '' });
 
   const allDrivers = useMemo(() => {
     const combined = [...drivers, ...localDrivers];
@@ -137,6 +140,14 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
   const saldoFinal = freightValue + extraExpensesSum - advanceValue - (hasTaxes ? taxesValue : 0);
   const bonusIndex = (programmingLoad?.value && programmingLoad.value > 0) ? (totalCusto / programmingLoad.value) * 100 : 0;
 
+  const handleLostReasonSubmit = () => {
+    const loadToUpdate = loads.find(l => l.id === lostReasonModal.loadId);
+    if (loadToUpdate) {
+      updateLoad({ ...loadToUpdate, status: 'PERDIDO', lostReason: lostReasonModal.reason, lostBy: 'Operacional' });
+    }
+    setLostReasonModal({ isOpen: false, loadId: '', reason: '' });
+  };
+
   const handleEfetivar = () => {
     if (!programmingLoad || !selectedDriver) return;
 
@@ -150,6 +161,7 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
       advance: advanceValue,
       balance: saldoFinal,
       hasTaxes: hasTaxes,
+      taxesValue: taxesValue,
       taxesRetained: hasTaxes ? taxesValue : 0
     };
 
@@ -165,13 +177,14 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
       status: 'PENDENTE'
     }, programmingLoad.ownerId);
 
-    if (taxesValue > 0) {
+    if (hasTaxes && taxesValue > 0) {
       addTransaction({
         date: new Date().toISOString().split('T')[0],
         desc: `Tributos - Carga #${programmingLoad.id} (${selectedDriver.name})`,
         type: 'SAIDA',
         value: taxesValue,
-        cat: '9', // ID for 'Impostos'
+        cat: '5', // ID for 'Carreteiro'
+        carreteiroType: 'Tributos sobre frete',
         status: 'PENDENTE'
       }, programmingLoad.ownerId);
     }
@@ -182,10 +195,17 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
   const waitingLoads = loads.filter(l => {
     if (l.status !== 'AGUARDANDO PROGRAMAÇÃO') return false;
     if (currentUser.role === 'Comercial') {
-      return l.assignedProgrammer === 'Comercial' && l.commercialRep === currentUser.name;
+      if (l.assignedProgrammer !== 'Comercial' || l.commercialRep !== currentUser.name) return false;
     }
     if (currentUser.role === 'Operacional') {
-      return l.assignedProgrammer !== 'Comercial';
+      if (l.assignedProgrammer === 'Comercial') return false;
+    }
+    if (searchLoadTerm) {
+      const term = searchLoadTerm.toLowerCase();
+      return l.customer.toLowerCase().includes(term) || 
+             l.origin.toLowerCase().includes(term) || 
+             l.destination.toLowerCase().includes(term) ||
+             (l.cteNumber && l.cteNumber.includes(searchLoadTerm));
     }
     return true; // Admin/Financeiro vê tudo
   });
@@ -193,10 +213,17 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
   const inTransitLoads = loads.filter(l => {
     if (l.status !== 'EM TRÂNSITO') return false;
     if (currentUser.role === 'Comercial') {
-      return l.assignedProgrammer === 'Comercial' && l.commercialRep === currentUser.name;
+      if (l.assignedProgrammer !== 'Comercial' || l.commercialRep !== currentUser.name) return false;
     }
     if (currentUser.role === 'Operacional') {
-      return l.assignedProgrammer !== 'Comercial';
+      if (l.assignedProgrammer === 'Comercial') return false;
+    }
+    if (searchLoadTerm) {
+      const term = searchLoadTerm.toLowerCase();
+      return l.customer.toLowerCase().includes(term) || 
+             l.origin.toLowerCase().includes(term) || 
+             l.destination.toLowerCase().includes(term) ||
+             (l.cteNumber && l.cteNumber.includes(searchLoadTerm));
     }
     return true;
   });
@@ -208,9 +235,21 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
           <h2 className="text-3xl font-black text-gray-800 tracking-tight">Gestão da Programação</h2>
           <p className="text-gray-500 italic">Multi-empresa Ativa: <span className="text-bordeaux font-black">{activeCompany}</span></p>
         </div>
-        <div className="flex bg-white p-1 rounded-2xl border border-gray-100 shadow-sm">
-           <button onClick={() => setActiveTab('Aguardando')} className={`px-6 py-3 rounded-xl font-black text-xs uppercase transition-all ${activeTab === 'Aguardando' ? 'bg-bordeaux text-white shadow-lg' : 'text-gray-400'}`}>Pendentes</button>
-           <button onClick={() => setActiveTab('EmTransito')} className={`px-6 py-3 rounded-xl font-black text-xs uppercase transition-all ${activeTab === 'EmTransito' ? 'bg-bordeaux text-white shadow-lg' : 'text-gray-400'}`}>Em Trânsito</button>
+        <div className="flex items-center gap-4">
+          <div className="relative w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+            <input 
+              type="text" 
+              placeholder="Buscar cliente, origem, CTE..." 
+              value={searchLoadTerm}
+              onChange={(e) => setSearchLoadTerm(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-bordeaux/20 outline-none transition-all shadow-sm"
+            />
+          </div>
+          <div className="flex bg-white p-1 rounded-2xl border border-gray-100 shadow-sm">
+             <button onClick={() => setActiveTab('Aguardando')} className={`px-6 py-3 rounded-xl font-black text-xs uppercase transition-all ${activeTab === 'Aguardando' ? 'bg-bordeaux text-white shadow-lg' : 'text-gray-400'}`}>Pendentes</button>
+             <button onClick={() => setActiveTab('EmTransito')} className={`px-6 py-3 rounded-xl font-black text-xs uppercase transition-all ${activeTab === 'EmTransito' ? 'bg-bordeaux text-white shadow-lg' : 'text-gray-400'}`}>Em Trânsito</button>
+          </div>
         </div>
       </div>
 
@@ -236,7 +275,13 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
                   </td>
                   <td className="px-8 py-6 text-sm font-black">{load.origin} <ArrowRight size={14} className="inline mx-2 text-gray-300"/> {load.destination}</td>
                   <td className="px-8 py-6"><span className="bg-bordeaux/5 text-bordeaux px-3 py-1 rounded-lg text-[10px] font-black uppercase">{load.vehicleTypeRequired}</span></td>
-                  <td className="px-8 py-6 text-right">
+                  <td className="px-8 py-6 text-right flex items-center justify-end gap-2">
+                    <button 
+                      onClick={() => setLostReasonModal({ isOpen: true, loadId: load.id, reason: '' })}
+                      className="text-red-500 hover:text-red-600 hover:bg-red-50 px-4 py-2.5 rounded-xl font-black text-xs uppercase transition-all"
+                    >
+                      Informar Perda
+                    </button>
                     <button 
                       onClick={() => setProgrammingLoad(load)}
                       className="bg-bordeaux text-white px-6 py-2.5 rounded-xl font-black text-xs uppercase shadow-lg hover:scale-105 transition-all"
@@ -282,10 +327,10 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
                     <button 
                       onClick={() => {
                         setUploadingDocsLoad(load);
-                        setDocUrls({
-                          cte: load.cteUrl || '',
-                          ciot: load.ciotUrl || '',
-                          contract: load.contractUrl || ''
+                        setDocs({
+                          cte: null,
+                          ciot: null,
+                          contract: null
                         });
                       }}
                       className="bg-gray-100 text-gray-600 px-4 py-2 rounded-xl font-black text-[10px] uppercase shadow-sm hover:bg-gray-200 transition-all flex items-center gap-2 ml-auto"
@@ -930,36 +975,47 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
             </div>
 
             <div className="p-8 space-y-6">
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">URL do CTe</label>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="border border-dashed border-gray-300 rounded-xl p-4 text-center hover:bg-gray-50 transition-colors">
                   <input 
-                    type="text" 
-                    placeholder="https://..."
-                    value={docUrls.cte}
-                    onChange={(e) => setDocUrls({...docUrls, cte: e.target.value})}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-bordeaux/20"
+                    type="file" 
+                    id="cteDocProg" 
+                    className="hidden" 
+                    onChange={(e) => setDocs({...docs, cte: e.target.files?.[0] || null})}
                   />
+                  <label htmlFor="cteDocProg" className="cursor-pointer flex flex-col items-center gap-2">
+                    <Upload size={24} className={docs.cte ? "text-emerald-500" : "text-gray-400"} />
+                    <span className="text-sm font-bold text-gray-700">Anexar CTE</span>
+                    <span className="text-xs text-gray-500">{docs.cte ? docs.cte.name : 'Nenhum arquivo'}</span>
+                  </label>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">URL do CIOT</label>
+
+                <div className="border border-dashed border-gray-300 rounded-xl p-4 text-center hover:bg-gray-50 transition-colors">
                   <input 
-                    type="text" 
-                    placeholder="https://..."
-                    value={docUrls.ciot}
-                    onChange={(e) => setDocUrls({...docUrls, ciot: e.target.value})}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-bordeaux/20"
+                    type="file" 
+                    id="ciotDocProg" 
+                    className="hidden" 
+                    onChange={(e) => setDocs({...docs, ciot: e.target.files?.[0] || null})}
                   />
+                  <label htmlFor="ciotDocProg" className="cursor-pointer flex flex-col items-center gap-2">
+                    <Upload size={24} className={docs.ciot ? "text-emerald-500" : "text-gray-400"} />
+                    <span className="text-sm font-bold text-gray-700">Anexar CIOT</span>
+                    <span className="text-xs text-gray-500">{docs.ciot ? docs.ciot.name : 'Nenhum arquivo'}</span>
+                  </label>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">URL do Contrato de Frete</label>
+
+                <div className="border border-dashed border-gray-300 rounded-xl p-4 text-center hover:bg-gray-50 transition-colors">
                   <input 
-                    type="text" 
-                    placeholder="https://..."
-                    value={docUrls.contract}
-                    onChange={(e) => setDocUrls({...docUrls, contract: e.target.value})}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-bordeaux/20"
+                    type="file" 
+                    id="contractDocProg" 
+                    className="hidden" 
+                    onChange={(e) => setDocs({...docs, contract: e.target.files?.[0] || null})}
                   />
+                  <label htmlFor="contractDocProg" className="cursor-pointer flex flex-col items-center gap-2">
+                    <Upload size={24} className={docs.contract ? "text-emerald-500" : "text-gray-400"} />
+                    <span className="text-sm font-bold text-gray-700">Contrato de Frete</span>
+                    <span className="text-xs text-gray-500">{docs.contract ? docs.contract.name : 'Nenhum arquivo'}</span>
+                  </label>
                 </div>
               </div>
             </div>
@@ -975,9 +1031,9 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
                 onClick={() => {
                   updateLoad({
                     ...uploadingDocsLoad,
-                    cteUrl: docUrls.cte,
-                    ciotUrl: docUrls.ciot,
-                    contractUrl: docUrls.contract
+                    cteUrl: docs.cte ? docs.cte.name : uploadingDocsLoad.cteUrl,
+                    ciotUrl: docs.ciot ? docs.ciot.name : uploadingDocsLoad.ciotUrl,
+                    contractUrl: docs.contract ? docs.contract.name : uploadingDocsLoad.contractUrl
                   });
                   setUploadingDocsLoad(null);
                 }}
@@ -989,6 +1045,62 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
           </div>
         </div>
       )}
+      {/* Modal de Motivo da Perda */}
+      {lostReasonModal.isOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-[32px] w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+            <div className="px-8 py-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+              <h2 className="text-xl font-black text-gray-900 tracking-tight flex items-center gap-3">
+                <AlertCircle size={24} className="text-red-600" />
+                Motivo da Perda
+              </h2>
+              <button onClick={() => setLostReasonModal({ isOpen: false, loadId: '', reason: '' })} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-xl transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="p-8">
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2">
+                    Por que a carga não foi programada?
+                  </label>
+                  <textarea
+                    value={lostReasonModal.reason}
+                    onChange={(e) => setLostReasonModal({ ...lostReasonModal, reason: e.target.value })}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-sm font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all resize-none h-32"
+                    placeholder="Ex: Falta de veículo na região, valor do frete incompatível com o mercado..."
+                  />
+                </div>
+
+                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex gap-3">
+                  <AlertCircle size={20} className="text-amber-600 shrink-0" />
+                  <p className="text-xs font-bold text-amber-800 leading-relaxed">
+                    Ao confirmar, esta carga será marcada como <span className="font-black">PERDIDA</span> e o comercial será notificado sobre o motivo.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-3 mt-8">
+                <button
+                  onClick={() => setLostReasonModal({ isOpen: false, loadId: '', reason: '' })}
+                  className="flex-1 px-6 py-3 text-sm font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleLostReasonSubmit}
+                  disabled={!lostReasonModal.reason.trim()}
+                  className="flex-1 px-6 py-3 text-sm font-bold text-white bg-red-600 hover:bg-red-700 rounded-xl transition-colors shadow-lg shadow-red-600/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Confirmar Perda
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
