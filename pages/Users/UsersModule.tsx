@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Plus, Search, Edit2, Trash2, X, Shield, User, Building2 } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, X, Shield, User, Building2, Key } from 'lucide-react';
 import { User as UserType } from '../../App';
 import { useCompany } from '../../App';
 import { doc, setDoc } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { createUserWithEmailAndPassword, signOut as firebaseSignOut } from 'firebase/auth';
+import { db, getSecondaryAuth } from '../../firebase';
 
 interface UsersModuleProps {
   users: UserType[];
@@ -23,6 +24,7 @@ const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers }) => {
     status: 'Ativo',
     ownerId: 'GLOBAL'
   });
+  const [password, setPassword] = useState('');
 
   // Filter users based on active company context and search term
   const filteredUsers = users.filter(user => {
@@ -46,6 +48,7 @@ const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers }) => {
         ownerId: activeCompany === 'GLOBAL' ? 'GLOBAL' : activeCompany
       });
     }
+    setPassword('');
     setShowModal(true);
   };
 
@@ -57,16 +60,33 @@ const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers }) => {
         await setDoc(doc(db, 'users', updatedUser.email), updatedUser);
       } else {
         if (!formData.email) return;
+        if (!password || password.length < 6) {
+          alert('A senha deve ter pelo menos 6 caracteres.');
+          return;
+        }
+        // Create Firebase Auth account using secondary app (keeps admin logged in)
+        const secondaryAuth = getSecondaryAuth();
+        await createUserWithEmailAndPassword(secondaryAuth, formData.email, password);
+        await firebaseSignOut(secondaryAuth);
+
+        // Save user profile in Firestore
         const newUser: UserType = {
           ...formData,
-          id: formData.email, // Use email as ID
+          id: formData.email,
         } as UserType;
         await setDoc(doc(db, 'users', newUser.email), newUser);
       }
       setShowModal(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving user:", error);
-      alert("Erro ao salvar usuário.");
+      const code = error?.code || '';
+      if (code === 'auth/email-already-in-use') {
+        alert('Este e-mail já possui uma conta cadastrada.');
+      } else if (code === 'auth/weak-password') {
+        alert('A senha é muito fraca. Use pelo menos 6 caracteres.');
+      } else {
+        alert('Erro ao salvar usuário.');
+      }
     }
   };
 
@@ -242,9 +262,27 @@ const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers }) => {
                   value={formData.email} 
                   onChange={e => setFormData({...formData, email: e.target.value})} 
                   required
+                  disabled={!!editingUser}
                   placeholder="joao@empresa.com.br"
                 />
               </div>
+
+              {!editingUser && (
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1 flex items-center gap-1">
+                    <Key size={12} /> Senha de Acesso
+                  </label>
+                  <input 
+                    type="password" 
+                    className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-bordeaux focus:border-transparent outline-none transition-all"
+                    value={password} 
+                    onChange={e => setPassword(e.target.value)} 
+                    required
+                    minLength={6}
+                    placeholder="Mínimo 6 caracteres"
+                  />
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-4">
                 <div>

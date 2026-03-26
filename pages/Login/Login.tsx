@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Lock, Mail, ArrowRight } from 'lucide-react';
-import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { Lock, Mail, ArrowRight, AlertCircle } from 'lucide-react';
+import { signInWithPopup, signInWithEmailAndPassword, GoogleAuthProvider } from 'firebase/auth';
 import { auth } from '../../firebase';
 
 interface LoginProps {
@@ -11,15 +11,27 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    // Simulate API call and login
-    setTimeout(() => {
+    setError('');
+    try {
+      const result = await signInWithEmailAndPassword(auth, email, password);
+      onLogin(result.user.email || undefined, result.user.uid);
+    } catch (err: any) {
+      const code = err?.code || '';
+      if (code === 'auth/user-not-found' || code === 'auth/invalid-credential') {
+        setError('E-mail ou senha incorretos.');
+      } else if (code === 'auth/too-many-requests') {
+        setError('Muitas tentativas. Aguarde alguns minutos.');
+      } else {
+        setError('Erro ao fazer login. Tente novamente.');
+      }
+    } finally {
       setIsLoading(false);
-      onLogin(email);
-    }, 1000);
+    }
   };
 
   const handleGoogleLogin = async () => {
@@ -65,6 +77,13 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             <h2 className="text-2xl font-bold text-gray-900">Bem-vindo de volta</h2>
             <p className="text-sm text-gray-500 mt-2">Acesse o painel de gestão logística</p>
           </div>
+
+          {error && (
+            <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
+              <AlertCircle size={18} />
+              {error}
+            </div>
+          )}
 
           <form className="space-y-6" onSubmit={handleSubmit}>
             <div>

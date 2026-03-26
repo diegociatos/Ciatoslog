@@ -763,15 +763,8 @@ const App: React.FC = () => {
   }
 
   if (!isAuthenticated || !currentUser) {
-    return <Login onLogin={(email) => {
-      // Temporary fallback for local dev without Firebase Auth
-      setIsAuthenticated(true);
-      if (email) {
-        const user = users.find(u => u.email === email);
-        if (user) {
-          setCurrentUser(user);
-        }
-      }
+    return <Login onLogin={() => {
+      // Auth state is handled by onAuthStateChanged listener
     }} />;
   }
 
