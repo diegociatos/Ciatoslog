@@ -1,19 +1,11 @@
 import React, { useState } from 'react';
-import { Lock, Mail, ArrowRight, UserCircle2 } from 'lucide-react';
+import { Lock, Mail, ArrowRight } from 'lucide-react';
 import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { auth } from '../../firebase';
 
 interface LoginProps {
   onLogin: (email?: string, uid?: string) => void;
 }
-
-const quickUsers = [
-  { name: 'Diego', role: 'Administrador', email: 'diegociatos@gmail.com' },
-  { name: 'Ana', role: 'Comercial', email: 'ana@ciatoslog.com.br' },
-  { name: 'Marcos', role: 'Operacional', email: 'marcos@bdtransportes.com.br' },
-  { name: 'Carla', role: 'Financeiro', email: 'carla@ciatoslog.com.br' },
-  { name: 'Vale S.A.', role: 'Cliente', email: 'logistica@vale.com.br' }
-];
 
 const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [email, setEmail] = useState('');
@@ -42,16 +34,6 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleQuickLogin = (userEmail: string) => {
-    setEmail(userEmail);
-    setPassword('123456');
-    setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
-      onLogin(userEmail);
-    }, 500);
   };
 
   return (
@@ -186,26 +168,6 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
               </button>
             </div>
           </form>
-
-          <div className="mt-8 pt-6 border-t border-gray-100">
-            <p className="text-xs text-center font-bold text-gray-500 uppercase tracking-wider mb-4">
-              Acesso Rápido (Desenvolvimento)
-            </p>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {quickUsers.map((user) => (
-                <button
-                  key={user.email}
-                  onClick={() => handleQuickLogin(user.email)}
-                  type="button"
-                  className="flex flex-col items-center justify-center p-2 rounded-xl border border-gray-200 hover:border-bordeaux/30 hover:bg-bordeaux/5 transition-all group"
-                >
-                  <UserCircle2 size={24} className="text-gray-400 group-hover:text-bordeaux mb-1 transition-colors" />
-                  <span className="text-xs font-bold text-gray-700 group-hover:text-bordeaux">{user.name}</span>
-                  <span className="text-[10px] text-gray-500">{user.role}</span>
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
         
         <div className="mt-8 text-center text-xs text-gray-400">

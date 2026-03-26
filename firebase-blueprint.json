@@ -1,135 +1,317 @@
 {
   "entities": {
-    "User": {
-      "title": "User",
-      "description": "A user of the system",
-      "type": "object",
-      "properties": {
-        "uid": { "type": "string", "description": "Firebase Auth UID" },
-        "name": { "type": "string", "description": "User's full name" },
-        "email": { "type": "string", "format": "email", "description": "User's email address" },
-        "role": { "type": "string", "enum": ["Administrador", "Comercial", "Operacional", "Financeiro", "Cliente"], "description": "User's role" },
-        "status": { "type": "string", "enum": ["Ativo", "Inativo"], "description": "User's status" },
-        "ownerId": { "type": "string", "description": "Company ID the user belongs to" },
-        "customerId": { "type": "string", "description": "ID of the customer if role is Cliente" }
-      },
-      "required": ["uid", "name", "email", "role", "status", "ownerId"]
-    },
-    "Load": {
-      "title": "Load",
-      "description": "A freight load",
+    "PricingConfig": {
+      "title": "PricingConfig",
+      "description": "Pricing configuration for a company",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
-        "ownerId": { "type": "string" },
-        "date": { "type": "string", "format": "date" },
-        "customer": { "type": "string" },
-        "origin": { "type": "string" },
-        "destination": { "type": "string" },
-        "value": { "type": "number" },
-        "cost": { "type": "number" },
-        "status": { "type": "string", "enum": ["AGUARDANDO", "EM VIAGEM", "ENTREGUE"] },
-        "driverId": { "type": "string" },
-        "vehicleId": { "type": "string" },
-        "observation": { "type": "string" },
-        "documentUrl": { "type": "string", "description": "URL of the attached document" }
+        "ownerId": { "type": "string", "enum": ["BD", "LOG"] },
+        "federalTaxes": { "type": "number" },
+        "icms": { "type": "number" },
+        "directCost": { "type": "number" },
+        "expenses": { "type": "number" },
+        "minProfit": { "type": "number" }
       },
-      "required": ["id", "ownerId", "date", "customer", "origin", "destination", "value", "cost", "status"]
-    },
-    "Client": {
-      "title": "Client",
-      "description": "A client company",
-      "type": "object",
-      "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "cnpj": { "type": "string" },
-        "email": { "type": "string", "format": "email" },
-        "phone": { "type": "string" },
-        "status": { "type": "string", "enum": ["Ativo", "Inativo"] },
-        "ownerId": { "type": "string" }
-      },
-      "required": ["id", "name", "cnpj", "email", "phone", "status", "ownerId"]
-    },
-    "Driver": {
-      "title": "Driver",
-      "description": "A truck driver",
-      "type": "object",
-      "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "cpf": { "type": "string" },
-        "phone": { "type": "string" },
-        "cnh": { "type": "string" },
-        "vehicleId": { "type": "string" },
-        "status": { "type": "string", "enum": ["Disponível", "Em Viagem", "Férias", "Afastado"] },
-        "ownerId": { "type": "string" }
-      },
-      "required": ["id", "name", "cpf", "phone", "cnh", "vehicleId", "status", "ownerId"]
-    },
-    "Transaction": {
-      "title": "Transaction",
-      "description": "A financial transaction",
-      "type": "object",
-      "properties": {
-        "id": { "type": "string" },
-        "date": { "type": "string", "format": "date" },
-        "description": { "type": "string" },
-        "amount": { "type": "number" },
-        "type": { "type": "string", "enum": ["Receita", "Despesa"] },
-        "category": { "type": "string" },
-        "status": { "type": "string", "enum": ["Pendente", "Pago", "Recebido", "Atrasado"] },
-        "bankAccountId": { "type": "string" },
-        "loadId": { "type": "string" },
-        "ownerId": { "type": "string" },
-        "clientName": { "type": "string" },
-        "carreteiroType": { "type": "string" },
-        "orderIndex": { "type": "number" },
-        "documentUrl": { "type": "string", "description": "URL of the attached document" }
-      },
-      "required": ["id", "date", "description", "amount", "type", "category", "status", "bankAccountId", "ownerId"]
+      "required": ["id", "ownerId", "federalTaxes", "icms", "directCost", "expenses", "minProfit"]
     },
     "CteRecord": {
       "title": "CteRecord",
-      "description": "A CTE record",
+      "description": "CTE record",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
         "loadId": { "type": "string" },
         "cteNumber": { "type": "string" },
-        "emissionDate": { "type": "string", "format": "date" },
+        "emissionDate": { "type": "string" },
+        "customer": { "type": "string" },
+        "origin": { "type": "string" },
+        "destination": { "type": "string" },
         "cteValue": { "type": "number" },
-        "status": { "type": "string", "enum": ["Emitido", "Cancelado", "Averbado"] },
-        "ownerId": { "type": "string" },
-        "documentUrl": { "type": "string", "description": "URL of the attached CTE document" }
+        "driverName": { "type": "string" },
+        "driverCpf": { "type": "string" },
+        "driverFreight": { "type": "number" },
+        "advanceValue": { "type": "number" },
+        "advanceDate": { "type": "string" },
+        "balanceValue": { "type": "number" },
+        "balanceDate": { "type": "string" },
+        "extraValue": { "type": "number" },
+        "extraReference": { "type": "string" },
+        "tollValue": { "type": "number" },
+        "taxesRetained": { "type": "number" },
+        "hasTaxes": { "type": "boolean" },
+        "financeApproved": { "type": "boolean" },
+        "financeRejected": { "type": "boolean" },
+        "dueDate": { "type": "string" },
+        "isPaid": { "type": "boolean" }
       },
-      "required": ["id", "loadId", "cteNumber", "emissionDate", "cteValue", "status", "ownerId"]
+      "required": ["id", "cteNumber", "emissionDate", "customer", "origin", "destination", "cteValue", "driverName", "driverCpf", "driverFreight", "advanceValue", "advanceDate", "balanceValue", "balanceDate", "extraValue", "extraReference", "tollValue", "taxesRetained"]
+    },
+    "Client": {
+      "title": "Client",
+      "description": "Client record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "ownerId": { "type": "string", "enum": ["BD", "LOG"] },
+        "name": { "type": "string" },
+        "cnpj": { "type": "string" },
+        "type": { "type": "string" },
+        "segment": { "type": "string" },
+        "city": { "type": "string" },
+        "state": { "type": "string" },
+        "commercialRep": { "type": "string" },
+        "status": { "type": "string", "enum": ["Prospecção", "Ativo", "Inativo", "Ex-cliente", "Negociação Travada"] },
+        "createdAt": { "type": "string" },
+        "lastNegotiation": { "type": "string" },
+        "decisionMakers": { "type": "array" },
+        "history": { "type": "array" },
+        "icmsContributor": { "type": "string", "enum": ["Sim", "Não", "Isento"] },
+        "stateRegistration": { "type": "string" },
+        "taxRegime": { "type": "string", "enum": ["Simples Nacional", "Lucro Presumido", "Lucro Real"] },
+        "financeEmail": { "type": "string" },
+        "financeEmail2": { "type": "string" },
+        "financeContact": { "type": "string" },
+        "financePhone": { "type": "string" },
+        "financePhone2": { "type": "string" }
+      },
+      "required": ["id", "ownerId", "name", "cnpj", "type", "segment", "city", "state", "commercialRep", "status", "icmsContributor", "taxRegime"]
+    },
+    "CommercialGoal": {
+      "title": "CommercialGoal",
+      "description": "Commercial goal for a user",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "month": { "type": "string" },
+        "year": { "type": "string" },
+        "salesGoal": { "type": "number" },
+        "prospectingGoal": { "type": "number" }
+      },
+      "required": ["id", "userId", "month", "year", "salesGoal", "prospectingGoal"]
+    },
+    "CommissionRule": {
+      "title": "CommissionRule",
+      "description": "Commission rule",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "role": { "type": "string", "enum": ["Comercial", "Operacional"] },
+        "type": { "type": "string", "enum": ["Comissao_Faturamento", "Meta_Extra"] },
+        "minRevenue": { "type": "number" },
+        "maxRevenue": { "type": "number" },
+        "commissionPercentage": { "type": "number" },
+        "targetRevenue": { "type": "number" },
+        "maxCostPercentage": { "type": "number" },
+        "bonusAmount": { "type": "number" }
+      },
+      "required": ["id", "role", "type"]
+    },
+    "User": {
+      "title": "User",
+      "description": "User profile",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["Administrador", "Operacional", "Financeiro", "Comercial", "Motorista", "Cliente", "Gestor"] },
+        "status": { "type": "string", "enum": ["Ativo", "Inativo"] },
+        "ownerId": { "type": "string", "enum": ["BD", "LOG", "GLOBAL"] },
+        "customerId": { "type": "string" }
+      },
+      "required": ["id", "name", "email", "role", "status", "ownerId"]
+    },
+    "Driver": {
+      "title": "Driver",
+      "description": "Driver record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "ownerId": { "type": "string", "enum": ["BD", "LOG"] },
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["PF", "PJ"] },
+        "cnpj_cpf": { "type": "string" },
+        "phone": { "type": "string" },
+        "vehicleType": { "type": "string" },
+        "plate": { "type": "string" },
+        "antt": { "type": "string" },
+        "rating": { "type": "number" },
+        "completedTrips": { "type": "number" },
+        "status": { "type": "string", "enum": ["Disponível", "Em Viagem", "Bloqueado"] },
+        "historyRoutes": { "type": "array" },
+        "pix": { "type": "string" },
+        "city": { "type": "string" },
+        "state": { "type": "string" },
+        "docsExpired": { "type": "boolean" }
+      },
+      "required": ["id", "ownerId", "name", "type", "cnpj_cpf", "phone", "vehicleType", "plate", "antt", "rating", "completedTrips", "status", "pix"]
+    },
+    "VehicleType": {
+      "title": "VehicleType",
+      "description": "Vehicle type",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "capacity": { "type": "number" },
+        "volume": { "type": "number" },
+        "active": { "type": "boolean" }
+      },
+      "required": ["id", "name", "capacity", "volume", "active"]
+    },
+    "RouteConfig": {
+      "title": "RouteConfig",
+      "description": "Route configuration",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "origin": { "type": "string" },
+        "destination": { "type": "string" },
+        "distance": { "type": "number" },
+        "time": { "type": "number" },
+        "toll": { "type": "number" },
+        "fuel": { "type": "number" }
+      },
+      "required": ["id", "origin", "destination", "distance", "time", "toll", "fuel"]
+    },
+    "Load": {
+      "title": "Load",
+      "description": "Load record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "ownerId": { "type": "string", "enum": ["BD", "LOG"] },
+        "date": { "type": "string" },
+        "customer": { "type": "string" },
+        "origin": { "type": "string" },
+        "destination": { "type": "string" },
+        "value": { "type": "number" },
+        "cost": { "type": "number" },
+        "status": { "type": "string", "enum": ["NEGOCIACAO", "DOCUMENTACAO", "PRONTO_PROGRAMAR", "AGUARDANDO PROGRAMAÇÃO", "AGUARDANDO EMISSÃO", "EM TRÂNSITO", "ENTREGUE", "Cancelado", "PERDIDO"] },
+        "lostReason": { "type": "string" },
+        "lostBy": { "type": "string", "enum": ["Comercial", "Operacional"] },
+        "loadType": { "type": "string", "enum": ["Fracionada", "Dedicada"] },
+        "driverId": { "type": "string" },
+        "driver": { "type": "string" },
+        "plate": { "type": "string" },
+        "advance": { "type": "number" },
+        "balance": { "type": "number" },
+        "vehicleTypeRequired": { "type": "string" },
+        "commercialRep": { "type": "string" },
+        "assignedProgrammer": { "type": "string" },
+        "merchandise": { "type": "string" },
+        "weight": { "type": "number" },
+        "volume": { "type": "number" },
+        "cteNumber": { "type": "string" },
+        "invoiceNumber": { "type": "string" },
+        "invoiceValue": { "type": "number" },
+        "boletoUrl": { "type": "string" },
+        "messages": { "type": "array" },
+        "trackingHistory": { "type": "array" }
+      },
+      "required": ["id", "ownerId", "date", "customer", "origin", "destination", "value", "cost", "status"]
+    },
+    "BankAccount": {
+      "title": "BankAccount",
+      "description": "Bank account",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["BANCO", "CAIXA"] },
+        "initialBalance": { "type": "number" }
+      },
+      "required": ["id", "name", "type", "initialBalance"]
+    },
+    "DRECategory": {
+      "title": "DRECategory",
+      "description": "DRE category",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "group": { "type": "string", "enum": ["RECEITA_BRUTA_COMPETENCIA", "RECEITA_BRUTA_CAIXA", "TRIBUTOS", "CUSTO_DIRETO_PESSOAL", "CUSTO_DIRETO_OPERACIONAL", "DESPESAS_COMERCIAIS", "DESPESAS_ADMINISTRATIVAS", "DESPESAS_FINANCEIRAS", "INVESTIMENTOS"] }
+      },
+      "required": ["id", "name", "group"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Financial transaction",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "ownerId": { "type": "string", "enum": ["BD", "LOG"] },
+        "date": { "type": "string" },
+        "dueDate": { "type": "string" },
+        "isRecurring": { "type": "boolean" },
+        "desc": { "type": "string" },
+        "type": { "type": "string", "enum": ["ENTRADA", "SAIDA"] },
+        "value": { "type": "number" },
+        "cat": { "type": "string" },
+        "bankAccountId": { "type": "string" },
+        "cte": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDENTE", "EFETIVADO", "CANCELADO"] },
+        "clientName": { "type": "string" },
+        "carreteiroType": { "type": "string", "enum": ["Adiantamento", "Saldo", "Extra", "Tributos sobre frete"] },
+        "orderIndex": { "type": "number" }
+      },
+      "required": ["id", "ownerId", "date", "desc", "type", "value", "cat", "status"]
     }
   },
   "firestore": {
-    "users": {
-      "schema": { "$ref": "#/entities/User" },
-      "description": "Collection of users"
-    },
-    "loads": {
-      "schema": { "$ref": "#/entities/Load" },
-      "description": "Collection of freight loads"
-    },
-    "clients": {
-      "schema": { "$ref": "#/entities/Client" },
-      "description": "Collection of clients"
-    },
-    "drivers": {
-      "schema": { "$ref": "#/entities/Driver" },
-      "description": "Collection of drivers"
-    },
-    "transactions": {
-      "schema": { "$ref": "#/entities/Transaction" },
-      "description": "Collection of financial transactions"
+    "pricingConfigs": {
+      "schema": { "$ref": "#/entities/PricingConfig" },
+      "description": "Pricing configurations"
     },
     "ctes": {
       "schema": { "$ref": "#/entities/CteRecord" },
-      "description": "Collection of CTE records"
+      "description": "CTE records"
+    },
+    "clients": {
+      "schema": { "$ref": "#/entities/Client" },
+      "description": "Clients"
+    },
+    "commercialGoals": {
+      "schema": { "$ref": "#/entities/CommercialGoal" },
+      "description": "Commercial goals"
+    },
+    "commissionRules": {
+      "schema": { "$ref": "#/entities/CommissionRule" },
+      "description": "Commission rules"
+    },
+    "users": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Users"
+    },
+    "drivers": {
+      "schema": { "$ref": "#/entities/Driver" },
+      "description": "Drivers"
+    },
+    "vehicleTypes": {
+      "schema": { "$ref": "#/entities/VehicleType" },
+      "description": "Vehicle types"
+    },
+    "routeConfigs": {
+      "schema": { "$ref": "#/entities/RouteConfig" },
+      "description": "Route configurations"
+    },
+    "loads": {
+      "schema": { "$ref": "#/entities/Load" },
+      "description": "Loads"
+    },
+    "bankAccounts": {
+      "schema": { "$ref": "#/entities/BankAccount" },
+      "description": "Bank accounts"
+    },
+    "dreCategories": {
+      "schema": { "$ref": "#/entities/DRECategory" },
+      "description": "DRE categories"
+    },
+    "transactions": {
+      "schema": { "$ref": "#/entities/Transaction" },
+      "description": "Financial transactions"
     }
   }
 }

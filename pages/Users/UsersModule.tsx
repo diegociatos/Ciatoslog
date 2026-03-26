@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Plus, Search, Edit2, Trash2, X, Shield, User, Building2 } from 'lucide-react';
 import { User as UserType } from '../../App';
 import { useCompany } from '../../App';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from '../../firebase';
 
 interface UsersModuleProps {
   users: UserType[];
@@ -47,27 +49,35 @@ const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers }) => {
     setShowModal(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editingUser) {
-      setUsers(users.map(u => u.id === editingUser.id ? { ...formData, id: u.id } as UserType : u));
-    } else {
-      const newUser: UserType = {
-        ...formData,
-        id: `${Math.floor(1000 + Math.random() * 9000)}`,
-      } as UserType;
-      setUsers([...users, newUser]);
+    try {
+      if (editingUser) {
+        const updatedUser = { ...formData, id: editingUser.id } as UserType;
+        await setDoc(doc(db, 'users', updatedUser.email), updatedUser);
+      } else {
+        if (!formData.email) return;
+        const newUser: UserType = {
+          ...formData,
+          id: formData.email, // Use email as ID
+        } as UserType;
+        await setDoc(doc(db, 'users', newUser.email), newUser);
+      }
+      setShowModal(false);
+    } catch (error) {
+      console.error("Error saving user:", error);
+      alert("Erro ao salvar usuário.");
     }
-    setShowModal(false);
   };
 
-  const toggleStatus = (id: string) => {
-    setUsers(users.map(u => {
-      if (u.id === id) {
-        return { ...u, status: u.status === 'Ativo' ? 'Inativo' : 'Ativo' };
-      }
-      return u;
-    }));
+  const toggleStatus = async (user: UserType) => {
+    try {
+      const updatedUser = { ...user, status: user.status === 'Ativo' ? 'Inativo' : 'Ativo' };
+      await setDoc(doc(db, 'users', user.email), updatedUser);
+    } catch (error) {
+      console.error("Error toggling user status:", error);
+      alert("Erro ao alterar status do usuário.");
+    }
   };
 
   const getRoleBadge = (role: string) => {
@@ -172,7 +182,7 @@ const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers }) => {
                         <Edit2 size={18} />
                       </button>
                       <button 
-                        onClick={() => toggleStatus(user.id)}
+                        onClick={() => toggleStatus(user)}
                         className={`p-2 rounded-lg transition-colors ${
                           user.status === 'Ativo' 
                             ? 'text-gray-400 hover:text-red-600 hover:bg-red-50' 

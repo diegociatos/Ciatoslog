@@ -18,6 +18,9 @@ import {
   Globe,
   FileText
 } from 'lucide-react';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, getDoc, setDoc, onSnapshot, collection } from 'firebase/firestore';
+import { auth, db } from './firebase';
 import DashboardModule from './components/DashboardModule';
 import CommercialModule from './pages/Commercial/CommercialModule';
 import FinanceModule from './pages/Finance/FinanceModule';
@@ -29,6 +32,7 @@ import UsersModule from './pages/Users/UsersModule';
 import CteModule from './pages/CTE/CteModule';
 import CteEmissionModule from './pages/CTE/CteEmissionModule';
 import TransportManagementModule from './pages/TransportManagement/TransportManagementModule';
+import PricingModule from './pages/Pricing/PricingModule';
 import CommercialDashboard from './pages/Commercial/CommercialDashboard';
 import ProgrammerDashboard from './pages/Programming/ProgrammerDashboard';
 import FinancialDashboard from './pages/Finance/FinancialDashboard';
@@ -315,9 +319,59 @@ export interface Transaction {
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeModule, setActiveModule] = useState<Module>(Module.Dashboard);
   const [activeCompany, setActiveCompany] = useState<CompanyId>('LOG');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        try {
+          // Check if user exists in Firestore by email
+          if (!firebaseUser.email) throw new Error("No email found");
+          const userDoc = await getDoc(doc(db, 'users', firebaseUser.email));
+          if (userDoc.exists()) {
+            setCurrentUser(userDoc.data() as User);
+            setIsAuthenticated(true);
+          } else {
+            // First time login or user not in DB yet. 
+            // If it's the admin, create the user.
+            if (firebaseUser.email === 'diegociatos@gmail.com') {
+              const newUser: User = {
+                id: firebaseUser.email,
+                name: firebaseUser.displayName || 'Admin',
+                email: firebaseUser.email,
+                role: 'Administrador',
+                status: 'Ativo',
+                ownerId: 'GLOBAL'
+              };
+              await setDoc(doc(db, 'users', firebaseUser.email), newUser);
+              setCurrentUser(newUser);
+              setIsAuthenticated(true);
+            } else {
+              // User not authorized
+              await signOut(auth);
+              alert('Usuário não autorizado. Contate o administrador.');
+              setIsAuthenticated(false);
+              setCurrentUser(null);
+            }
+          }
+        } catch (error) {
+          console.error("Error fetching user data:", error);
+          setIsAuthenticated(false);
+          setCurrentUser(null);
+        }
+      } else {
+        setIsAuthenticated(false);
+        setCurrentUser(null);
+      }
+      setIsAuthReady(true);
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   // Helper visual para badges de empresa
   const getCompanyBadge = (id: string | undefined) => {
@@ -372,14 +426,31 @@ const App: React.FC = () => {
     }
   ]);
 
-  const [users, setUsers] = useState<User[]>([
-    { id: '1', name: 'Diego Ciatos', email: 'diegociatos@gmail.com', role: 'Administrador', status: 'Ativo', ownerId: 'GLOBAL' },
-    { id: '2', name: 'Ana Beatriz', email: 'ana@ciatoslog.com.br', role: 'Comercial', status: 'Ativo', ownerId: 'LOG' },
-    { id: '3', name: 'Marcos Oliveira', email: 'marcos@bdtransportes.com.br', role: 'Operacional', status: 'Ativo', ownerId: 'BD' },
-    { id: '4', name: 'Carla Financeiro', email: 'carla@ciatoslog.com.br', role: 'Financeiro', status: 'Ativo', ownerId: 'GLOBAL' },
-    { id: '5', name: 'Vale S.A.', email: 'logistica@vale.com.br', role: 'Cliente', status: 'Ativo', ownerId: 'GLOBAL', customerId: '1' },
-    { id: '6', name: 'João Gestor', email: 'gestor@ciatoslog.com.br', role: 'Gestor', status: 'Ativo', ownerId: 'GLOBAL' }
-  ]);
+  const [users, setUsers] = useState<User[]>([]);
+
+  // Fetch users from Firestore
+  useEffect(() => {
+    if (!isAuthenticated || !currentUser) return;
+    
+    // Only admins can read all users, but users can read their own profile.
+    // For simplicity, if the user is not an admin, we just set their own profile in the users array.
+    if (currentUser.role !== 'Administrador') {
+      setUsers([currentUser]);
+      return;
+    }
+
+    const unsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
+      const usersData: User[] = [];
+      snapshot.forEach((doc) => {
+        usersData.push({ id: doc.id, ...doc.data() } as User);
+      });
+      setUsers(usersData);
+    }, (error) => {
+      console.error("Error fetching users:", error);
+    });
+
+    return () => unsubscribe();
+  }, [isAuthenticated, currentUser]);
 
   const [ctes, setCtes] = useState<CteRecord[]>([
     {
@@ -408,8 +479,6 @@ const App: React.FC = () => {
     }
   ]);
 
-  const [currentUser, setCurrentUser] = useState<User>(users[0]);
-
   const [commercialGoals, setCommercialGoals] = useState<CommercialGoal[]>([
     { id: 'G1', userId: 'Ana Beatriz', month: '03', year: '2026', salesGoal: 50000, prospectingGoal: 10 }
   ]);
@@ -421,10 +490,32 @@ const App: React.FC = () => {
     { id: 'CR4', role: 'Operacional', type: 'Meta_Extra', maxCostPercentage: 58, bonusAmount: 1500 }
   ]);
 
-  const [pricingConfigs, setPricingConfigs] = useState<PricingConfig[]>([
-    { id: 'P1', ownerId: 'BD', federalTaxes: 14.33, icms: 12, directCost: 5, expenses: 10, minProfit: 15 },
-    { id: 'P2', ownerId: 'LOG', federalTaxes: 14.33, icms: 12, directCost: 5, expenses: 10, minProfit: 15 }
-  ]);
+  const [pricingConfigs, setPricingConfigs] = useState<PricingConfig[]>([]);
+
+  // Fetch pricingConfigs from Firestore
+  useEffect(() => {
+    if (!isAuthenticated || !currentUser) return;
+    
+    const unsubscribe = onSnapshot(collection(db, 'pricingConfigs'), (snapshot) => {
+      const configsData: PricingConfig[] = [];
+      snapshot.forEach((doc) => {
+        configsData.push({ id: doc.id, ...doc.data() } as PricingConfig);
+      });
+      // If empty, set defaults
+      if (configsData.length === 0) {
+        setPricingConfigs([
+          { id: 'P1', ownerId: 'BD', federalTaxes: 14.33, icms: 12, directCost: 5, expenses: 10, minProfit: 15 },
+          { id: 'P2', ownerId: 'LOG', federalTaxes: 14.33, icms: 12, directCost: 5, expenses: 10, minProfit: 15 }
+        ]);
+      } else {
+        setPricingConfigs(configsData);
+      }
+    }, (error) => {
+      console.error("Error fetching pricing configs:", error);
+    });
+
+    return () => unsubscribe();
+  }, [isAuthenticated, currentUser]);
 
   const [loads, setLoads] = useState<Load[]>([
     { 
@@ -541,21 +632,25 @@ const App: React.FC = () => {
 
   // LÓGICA DE FILTRAGEM GLOBAL
   const filteredLoads = useMemo(() => {
+    if (!currentUser) return [];
     if (currentUser.role === 'Cliente') return loads.filter(l => l.customer === currentUser.name);
     return activeCompany === 'GLOBAL' ? loads : loads.filter(l => l.ownerId === activeCompany);
   }, [loads, activeCompany, currentUser]);
 
   const filteredClients = useMemo(() => {
+    if (!currentUser) return [];
     if (currentUser.role === 'Cliente') return clients.filter(c => c.name === currentUser.name);
     return activeCompany === 'GLOBAL' ? clients : clients.filter(c => c.ownerId === activeCompany);
   }, [clients, activeCompany, currentUser]);
 
   const filteredDrivers = useMemo(() => {
+    if (!currentUser) return [];
     if (currentUser.role === 'Cliente') return drivers; // Or filter if needed
     return activeCompany === 'GLOBAL' ? drivers : drivers.filter(d => d.ownerId === activeCompany);
   }, [drivers, activeCompany, currentUser]);
 
   const filteredTransactions = useMemo(() => {
+    if (!currentUser) return [];
     if (currentUser.role === 'Cliente') return transactions.filter(t => t.clientName === currentUser.name);
     return activeCompany === 'GLOBAL' ? transactions : transactions.filter(t => t.ownerId === activeCompany);
   }, [transactions, activeCompany, currentUser]);
@@ -588,6 +683,7 @@ const App: React.FC = () => {
   };
 
   const renderContent = () => {
+    if (!currentUser) return null;
     switch (activeModule) {
       case Module.Dashboard:
         if (currentUser.role === 'Cliente') {
@@ -633,6 +729,8 @@ const App: React.FC = () => {
         return <CteEmissionModule loads={filteredLoads} updateLoad={updateLoad} currentUser={currentUser} ctes={ctes} setCtes={setCtes} />;
       case Module.Usuarios:
         return <UsersModule users={users} setUsers={setUsers} />;
+      case Module.Precificacao:
+        return <PricingModule pricingConfigs={pricingConfigs} setPricingConfigs={setPricingConfigs} />;
       case Module.Configuracoes:
         return <SettingsModule 
           vehicleTypes={vehicleTypes} 
@@ -656,6 +754,27 @@ const App: React.FC = () => {
     }
   };
 
+  if (!isAuthReady) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="w-12 h-12 border-4 border-bordeaux border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated || !currentUser) {
+    return <Login onLogin={(email) => {
+      // Temporary fallback for local dev without Firebase Auth
+      setIsAuthenticated(true);
+      if (email) {
+        const user = users.find(u => u.email === email);
+        if (user) {
+          setCurrentUser(user);
+        }
+      }
+    }} />;
+  }
+
   const navItems = [
     { id: Module.Dashboard, icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
     { id: Module.Comercial, icon: <Briefcase size={20} />, label: 'Comercial' },
@@ -667,31 +786,20 @@ const App: React.FC = () => {
     { id: Module.Transportes, icon: <Truck size={20} />, label: 'Gestão de Transportes' },
     { id: Module.Financeiro, icon: <CircleDollarSign size={20} />, label: 'Financeiro' },
     { id: Module.Usuarios, icon: <Users size={20} />, label: 'Usuários' },
+    { id: Module.Precificacao, icon: <CircleDollarSign size={20} />, label: 'Precificação' },
     { id: Module.Configuracoes, icon: <Settings size={20} />, label: 'Configurações' },
   ].filter(item => {
     if (item.id === Module.Financeiro) return ['Administrador', 'Financeiro', 'Gestor'].includes(currentUser.role);
     if (item.id === Module.EmissaoCTE) return ['Administrador', 'Comercial', 'Operacional', 'Financeiro', 'Gestor'].includes(currentUser.role);
     if (item.id === Module.GestaoCTE) return ['Administrador', 'Financeiro', 'Comercial', 'Operacional', 'Gestor'].includes(currentUser.role);
     if (item.id === Module.Transportes) return ['Administrador', 'Operacional', 'Comercial', 'Cliente', 'Gestor'].includes(currentUser.role);
-    if (item.id === Module.Usuarios || item.id === Module.Configuracoes) return ['Administrador'].includes(currentUser.role);
+    if (item.id === Module.Usuarios || item.id === Module.Configuracoes || item.id === Module.Precificacao) return ['Administrador'].includes(currentUser.role);
     if (item.id === Module.Comercial) return ['Administrador', 'Comercial', 'Financeiro', 'Gestor'].includes(currentUser.role);
     if (item.id === Module.Programacao || item.id === Module.Motoristas) return ['Administrador', 'Operacional', 'Comercial', 'Financeiro', 'Gestor'].includes(currentUser.role);
     if (item.id === Module.Clientes) return ['Administrador', 'Comercial', 'Financeiro', 'Gestor'].includes(currentUser.role);
     if (item.id === Module.Dashboard) return ['Administrador', 'Comercial', 'Financeiro', 'Operacional', 'Gestor'].includes(currentUser.role);
     return false;
   });
-
-  if (!isAuthenticated) {
-    return <Login onLogin={(email) => {
-      setIsAuthenticated(true);
-      if (email) {
-        const user = users.find(u => u.email === email);
-        if (user) {
-          setCurrentUser(user);
-        }
-      }
-    }} />;
-  }
 
   return (
     <CompanyContext.Provider value={companyContextValue}>
@@ -767,28 +875,17 @@ const App: React.FC = () => {
                 
                 {/* DROPDOWN DE USUÁRIOS */}
                 <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-2xl shadow-xl border border-gray-100 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 overflow-hidden">
-                  <div className="p-3 bg-gray-50 border-b border-gray-100">
-                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Alternar Usuário</p>
+                  <div className="p-4 border-b border-gray-100">
+                    <p className="text-sm font-bold text-gray-900">{currentUser.name}</p>
+                    <p className="text-xs text-gray-500">{currentUser.email}</p>
                   </div>
-                  <div className="max-h-64 overflow-y-auto">
-                    {users.map(user => (
-                      <button 
-                        key={user.id}
-                        onClick={() => {
-                          setCurrentUser(user);
-                          setActiveModule(user.role === 'Cliente' ? Module.Transportes : Module.Dashboard);
-                        }}
-                        className={`w-full px-4 py-3 flex items-center gap-3 text-left transition-colors ${currentUser.id === user.id ? 'bg-bordeaux/5' : 'hover:bg-gray-50'}`}
-                      >
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${currentUser.id === user.id ? 'bg-bordeaux text-white' : 'bg-gray-200 text-gray-600'}`}>
-                          {user.name.charAt(0)}
-                        </div>
-                        <div>
-                          <p className={`text-sm font-bold ${currentUser.id === user.id ? 'text-bordeaux' : 'text-gray-900'}`}>{user.name}</p>
-                          <p className="text-[10px] text-gray-500 uppercase font-medium tracking-wider">{user.role}</p>
-                        </div>
-                      </button>
-                    ))}
+                  <div className="p-2">
+                    <button 
+                      onClick={() => signOut(auth)}
+                      className="w-full px-4 py-2 text-sm font-bold text-red-600 hover:bg-red-50 rounded-xl transition-colors text-left"
+                    >
+                      Sair do Sistema
+                    </button>
                   </div>
                 </div>
               </div>
