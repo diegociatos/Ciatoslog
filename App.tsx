@@ -16,10 +16,15 @@ import {
   Building2,
   Contact2,
   Globe,
-  FileText
+  FileText,
+  LogOut,
+  Camera,
+  Upload,
+  User as UserIcon,
+  ChevronLeft
 } from 'lucide-react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, getDoc, setDoc, onSnapshot, collection } from 'firebase/firestore';
+import { doc, getDoc, setDoc, onSnapshot, collection, updateDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import DashboardModule from './components/DashboardModule';
 import CommercialModule from './pages/Commercial/CommercialModule';
@@ -174,6 +179,7 @@ export interface User {
   status: 'Ativo' | 'Inativo';
   ownerId: 'BD' | 'LOG' | 'GLOBAL';
   customerId?: string;
+  photoURL?: string;
 }
 
 export interface Driver {
@@ -324,6 +330,8 @@ const App: React.FC = () => {
   const [activeModule, setActiveModule] = useState<Module>(Module.Dashboard);
   const [activeCompany, setActiveCompany] = useState<CompanyId>('LOG');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -682,6 +690,54 @@ const App: React.FC = () => {
     setTransactions(prev => prev.map(t => t.id === updatedTransaction.id ? updatedTransaction : t));
   };
 
+  const navItems = useMemo(() => {
+    if (!currentUser) return [];
+    
+    const allItems = [
+      { id: Module.Dashboard, icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
+      { id: Module.Comercial, icon: <Briefcase size={20} />, label: 'Comercial' },
+      { id: Module.Clientes, icon: <Building2 size={20} />, label: 'Clientes / CRM' },
+      { id: Module.Programacao, icon: <CalendarDays size={20} />, label: 'Programação' },
+      { id: Module.Motoristas, icon: <Contact2 size={20} />, label: 'Motoristas' },
+      { id: Module.EmissaoCTE, icon: <FileText size={20} />, label: 'Emissão de CTE' },
+      { id: Module.GestaoCTE, icon: <FileText size={20} />, label: 'Gestão de CTE' },
+      { id: Module.Transportes, icon: <Truck size={20} />, label: 'Gestão de Transportes' },
+      { id: Module.Financeiro, icon: <CircleDollarSign size={20} />, label: 'Financeiro' },
+      { id: Module.Usuarios, icon: <Users size={20} />, label: 'Usuários' },
+      { id: Module.Precificacao, icon: <CircleDollarSign size={20} />, label: 'Precificação' },
+      { id: Module.Configuracoes, icon: <Settings size={20} />, label: 'Configurações' },
+    ];
+
+    // Se for Administrador, vê tudo sem restrições
+    if (currentUser.role === 'Administrador') return allItems;
+
+    // Filtro para outros papéis
+    return allItems.filter(item => {
+      const role = currentUser.role;
+      
+      switch (item.id) {
+        case Module.Dashboard:
+          return ['Comercial', 'Financeiro', 'Operacional', 'Gestor'].includes(role);
+        case Module.Comercial:
+        case Module.Clientes:
+          return ['Comercial', 'Financeiro', 'Gestor'].includes(role);
+        case Module.Programacao:
+        case Module.Motoristas:
+        case Module.EmissaoCTE:
+        case Module.GestaoCTE:
+          return ['Comercial', 'Operacional', 'Financeiro', 'Gestor'].includes(role);
+        case Module.Transportes:
+          return ['Operacional', 'Comercial', 'Cliente', 'Gestor'].includes(role);
+        case Module.Financeiro:
+          return ['Financeiro', 'Gestor'].includes(role);
+        case Module.Configuracoes:
+          return ['Gestor'].includes(role); // Gestores também podem ver configurações básicas
+        default:
+          return false;
+      }
+    });
+  }, [currentUser, currentUser?.role]);
+
   const renderContent = () => {
     if (!currentUser) return null;
     switch (activeModule) {
@@ -763,56 +819,75 @@ const App: React.FC = () => {
   }
 
   if (!isAuthenticated || !currentUser) {
-    return <Login onLogin={() => {
-      // Auth state is handled by onAuthStateChanged listener
+    return <Login onLogin={(email) => {
+      // Temporary fallback for local dev without Firebase Auth
+      setIsAuthenticated(true);
+      if (email) {
+        const user = users.find(u => u.email === email);
+        if (user) {
+          setCurrentUser(user);
+        }
+      }
     }} />;
   }
 
-  const navItems = [
-    { id: Module.Dashboard, icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
-    { id: Module.Comercial, icon: <Briefcase size={20} />, label: 'Comercial' },
-    { id: Module.Clientes, icon: <Building2 size={20} />, label: 'Clientes / CRM' },
-    { id: Module.Programacao, icon: <CalendarDays size={20} />, label: 'Programação' },
-    { id: Module.Motoristas, icon: <Contact2 size={20} />, label: 'Motoristas' },
-    { id: Module.EmissaoCTE, icon: <FileText size={20} />, label: 'Emissão de CTE' },
-    { id: Module.GestaoCTE, icon: <FileText size={20} />, label: 'Gestão de CTE' },
-    { id: Module.Transportes, icon: <Truck size={20} />, label: 'Gestão de Transportes' },
-    { id: Module.Financeiro, icon: <CircleDollarSign size={20} />, label: 'Financeiro' },
-    { id: Module.Usuarios, icon: <Users size={20} />, label: 'Usuários' },
-    { id: Module.Precificacao, icon: <CircleDollarSign size={20} />, label: 'Precificação' },
-    { id: Module.Configuracoes, icon: <Settings size={20} />, label: 'Configurações' },
-  ].filter(item => {
-    if (item.id === Module.Financeiro) return ['Administrador', 'Financeiro', 'Gestor'].includes(currentUser.role);
-    if (item.id === Module.EmissaoCTE) return ['Administrador', 'Comercial', 'Operacional', 'Financeiro', 'Gestor'].includes(currentUser.role);
-    if (item.id === Module.GestaoCTE) return ['Administrador', 'Financeiro', 'Comercial', 'Operacional', 'Gestor'].includes(currentUser.role);
-    if (item.id === Module.Transportes) return ['Administrador', 'Operacional', 'Comercial', 'Cliente', 'Gestor'].includes(currentUser.role);
-    if (item.id === Module.Usuarios || item.id === Module.Configuracoes || item.id === Module.Precificacao) return ['Administrador'].includes(currentUser.role);
-    if (item.id === Module.Comercial) return ['Administrador', 'Comercial', 'Financeiro', 'Gestor'].includes(currentUser.role);
-    if (item.id === Module.Programacao || item.id === Module.Motoristas) return ['Administrador', 'Operacional', 'Comercial', 'Financeiro', 'Gestor'].includes(currentUser.role);
-    if (item.id === Module.Clientes) return ['Administrador', 'Comercial', 'Financeiro', 'Gestor'].includes(currentUser.role);
-    if (item.id === Module.Dashboard) return ['Administrador', 'Comercial', 'Financeiro', 'Operacional', 'Gestor'].includes(currentUser.role);
-    return false;
-  });
+  const handleLogout = async () => {
+    console.log("Iniciando logout...");
+    try {
+      await signOut(auth);
+      // Forçamos o reset do estado local caso o onAuthStateChanged não dispare (ex: login simulado)
+      setIsAuthenticated(false);
+      setCurrentUser(null);
+      setIsUserMenuOpen(false);
+      console.log("Logout concluído com sucesso.");
+    } catch (error) {
+      console.error("Erro ao sair:", error);
+      alert("Erro ao sair do sistema. Tente novamente.");
+    }
+  };
+
+  const handleUpdateProfile = async (data: { name: string; photoURL?: string }) => {
+    if (!currentUser) return;
+    try {
+      await updateDoc(doc(db, 'users', currentUser.id), data);
+      setCurrentUser({ ...currentUser, ...data });
+      setIsProfileModalOpen(false);
+    } catch (error) {
+      console.error("Erro ao atualizar perfil:", error);
+    }
+  };
 
   return (
     <CompanyContext.Provider value={companyContextValue}>
       <div className="flex h-screen overflow-hidden text-gray-900 w-full" style={{ fontFamily: 'Book Antiqua, serif' }}>
-        <aside className={`${isSidebarOpen ? 'w-[260px]' : 'w-20'} bg-bordeaux text-white transition-all duration-300 flex flex-col z-20 shadow-xl shrink-0`}>
+        <aside className={`${isSidebarOpen ? 'w-[260px]' : 'w-20'} h-full bg-bordeaux text-white transition-all duration-300 flex flex-col z-20 shadow-xl shrink-0`}>
           <div className="p-6 flex items-center gap-3 border-b border-white/10 overflow-hidden">
             <div className="bg-white p-2 rounded-lg shrink-0"><Truck size={24} className="text-bordeaux" /></div>
             {isSidebarOpen && <span className="font-bold text-xl tracking-tight uppercase whitespace-nowrap">CIATOS LOG</span>}
           </div>
-          <nav className="flex-1 mt-6 px-3 space-y-2 overflow-y-auto">
+          <nav className="flex-1 mt-6 px-3 space-y-2 overflow-y-auto scrollbar-hide">
             {navItems.map((item) => (
-              <button key={item.id} onClick={() => setActiveModule(item.id)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeModule === item.id ? 'bg-white text-bordeaux shadow-lg scale-[1.02]' : 'hover:bg-white/10 text-white/80 hover:text-white'}`}>
+              <button 
+                key={item.id} 
+                onClick={() => setActiveModule(item.id)} 
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeModule === item.id ? 'bg-white text-bordeaux shadow-lg scale-[1.02]' : 'hover:bg-white/10 text-white/80 hover:text-white'}`}
+              >
                 <div className="shrink-0">{item.icon}</div>
                 {isSidebarOpen && <span className="font-medium whitespace-nowrap">{item.label}</span>}
               </button>
             ))}
           </nav>
-          <div className="p-4 border-t border-white/10">
+          <div className="p-4 border-t border-white/10 space-y-2">
+            <button 
+              onClick={handleLogout} 
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-red-500/20 text-white/80 hover:text-white transition-all group"
+              title="Sair do Sistema"
+            >
+              <div className="shrink-0"><LogOut size={20} className="group-hover:text-red-400" /></div>
+              {isSidebarOpen && <span className="font-medium whitespace-nowrap">Sair do Sistema</span>}
+            </button>
             <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="w-full flex items-center justify-center p-2 rounded-lg hover:bg-white/10 transition-colors">
-              {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
+              {isSidebarOpen ? <ChevronLeft size={20} /> : <Menu size={20} />}
             </button>
           </div>
         </aside>
@@ -854,38 +929,145 @@ const App: React.FC = () => {
               <button className="relative p-2 text-gray-500 hover:bg-gray-100 rounded-full transition-colors"><Bell size={20} /><span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span></button>
               
               {/* SELETOR DE USUÁRIO (SIMULAÇÃO DE LOGIN) */}
-              <div className="relative group border-l border-gray-200 pl-6">
-                <div className="flex items-center gap-3 cursor-pointer">
+              <div className="relative border-l border-gray-200 pl-6">
+                <div 
+                  onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                  className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 p-2 rounded-2xl transition-all"
+                >
                   <div className="text-right hidden sm:block">
                     <p className="text-sm font-bold text-gray-800">{currentUser.name}</p>
                     <p className="text-xs text-gray-500">{currentUser.role}</p>
                   </div>
-                  <div className="bg-gray-100 p-1 rounded-full border-2 border-bordeaux/20 shrink-0">
-                    <UserCircle size={32} className="text-bordeaux" />
+                  <div className="bg-gray-100 p-1 rounded-full border-2 border-bordeaux/20 shrink-0 w-10 h-10 overflow-hidden flex items-center justify-center">
+                    {currentUser.photoURL ? (
+                      <img src={currentUser.photoURL} alt={currentUser.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <UserCircle size={32} className="text-bordeaux" />
+                    )}
                   </div>
-                  <ChevronDown size={14} className="text-gray-400" />
+                  <ChevronDown size={14} className={`text-gray-400 transition-transform ${isUserMenuOpen ? 'rotate-180' : ''}`} />
                 </div>
                 
                 {/* DROPDOWN DE USUÁRIOS */}
-                <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-2xl shadow-xl border border-gray-100 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 overflow-hidden">
-                  <div className="p-4 border-b border-gray-100">
-                    <p className="text-sm font-bold text-gray-900">{currentUser.name}</p>
-                    <p className="text-xs text-gray-500">{currentUser.email}</p>
-                  </div>
-                  <div className="p-2">
-                    <button 
-                      onClick={() => signOut(auth)}
-                      className="w-full px-4 py-2 text-sm font-bold text-red-600 hover:bg-red-50 rounded-xl transition-colors text-left"
-                    >
-                      Sair do Sistema
-                    </button>
-                  </div>
-                </div>
+                {isUserMenuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setIsUserMenuOpen(false)}></div>
+                    <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-2xl shadow-2xl border border-gray-100 transition-all z-50 overflow-hidden animate-in fade-in slide-in-from-top-2">
+                      <div className="p-4 border-b border-gray-100 bg-gray-50/50">
+                        <p className="text-sm font-bold text-gray-900">{currentUser.name}</p>
+                        <p className="text-xs text-gray-500">{currentUser.email}</p>
+                      </div>
+                      <div className="p-2 space-y-1">
+                        <button 
+                          onClick={() => {
+                            setIsProfileModalOpen(true);
+                            setIsUserMenuOpen(false);
+                          }}
+                          className="w-full px-4 py-2 text-sm font-bold text-gray-700 hover:bg-gray-50 rounded-xl transition-colors text-left flex items-center gap-2"
+                        >
+                          <UserIcon size={16} />
+                          Meu Perfil
+                        </button>
+                        <button 
+                          onClick={handleLogout}
+                          className="w-full px-4 py-2 text-sm font-bold text-red-600 hover:bg-red-50 rounded-xl transition-colors text-left flex items-center gap-2"
+                        >
+                          <LogOut size={16} />
+                          Sair do Sistema
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </header>
           <main className="flex-1 flex flex-col w-full h-full overflow-y-auto bg-[#F8F9FA] p-8">{renderContent()}</main>
         </div>
+
+        {/* MODAL DE PERFIL */}
+        {isProfileModalOpen && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
+              <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-bordeaux text-white">
+                <h3 className="text-xl font-bold">Meu Perfil</h3>
+                <button onClick={() => setIsProfileModalOpen(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+                  <X size={20} />
+                </button>
+              </div>
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                const formData = new FormData(e.currentTarget);
+                handleUpdateProfile({
+                  name: formData.get('name') as string,
+                  photoURL: formData.get('photoURL') as string
+                });
+              }} className="p-8 space-y-6">
+                <div className="flex flex-col items-center gap-4">
+                  <div className="relative group">
+                    <div className="w-24 h-24 rounded-full bg-gray-100 border-4 border-bordeaux/20 overflow-hidden flex items-center justify-center">
+                      {currentUser.photoURL ? (
+                        <img src={currentUser.photoURL} alt={currentUser.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <UserCircle size={64} className="text-bordeaux" />
+                      )}
+                    </div>
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-full cursor-pointer">
+                      <Camera size={24} className="text-white" />
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-500 italic text-center">Insira a URL de uma imagem para sua foto de perfil</p>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 ml-1">Nome Completo</label>
+                    <input 
+                      name="name"
+                      defaultValue={currentUser.name}
+                      className="w-full p-4 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-bordeaux focus:border-transparent outline-none transition-all"
+                      placeholder="Seu nome"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 ml-1">URL da Foto</label>
+                    <input 
+                      name="photoURL"
+                      defaultValue={currentUser.photoURL}
+                      className="w-full p-4 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-bordeaux focus:border-transparent outline-none transition-all"
+                      placeholder="https://exemplo.com/foto.jpg"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 ml-1">E-mail (Não alterável)</label>
+                    <input 
+                      value={currentUser.email}
+                      disabled
+                      className="w-full p-4 bg-gray-100 border border-gray-200 rounded-2xl text-gray-400 cursor-not-allowed"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-4 flex gap-3">
+                  <button 
+                    type="button"
+                    onClick={() => setIsProfileModalOpen(false)}
+                    className="flex-1 py-4 px-6 border border-gray-200 rounded-2xl font-bold text-gray-600 hover:bg-gray-50 transition-all"
+                  >
+                    Cancelar
+                  </button>
+                  <button 
+                    type="submit"
+                    className="flex-1 py-4 px-6 bg-bordeaux text-white rounded-2xl font-bold hover:shadow-lg hover:shadow-bordeaux/20 transition-all"
+                  >
+                    Salvar Alterações
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     </CompanyContext.Provider>
   );

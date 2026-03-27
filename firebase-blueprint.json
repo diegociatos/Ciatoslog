@@ -119,7 +119,8 @@
         "role": { "type": "string", "enum": ["Administrador", "Operacional", "Financeiro", "Comercial", "Motorista", "Cliente", "Gestor"] },
         "status": { "type": "string", "enum": ["Ativo", "Inativo"] },
         "ownerId": { "type": "string", "enum": ["BD", "LOG", "GLOBAL"] },
-        "customerId": { "type": "string" }
+        "customerId": { "type": "string" },
+        "photoURL": { "type": "string" }
       },
       "required": ["id", "name", "email", "role", "status", "ownerId"]
     },

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Lock, Mail, ArrowRight, AlertCircle, CheckCircle } from 'lucide-react';
-import { signInWithPopup, signInWithEmailAndPassword, sendPasswordResetEmail, GoogleAuthProvider } from 'firebase/auth';
+import { Lock, Mail, ArrowRight } from 'lucide-react';
+import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { auth } from '../../firebase';
 
 interface LoginProps {
@@ -11,77 +11,26 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [successMsg, setSuccessMsg] = useState('');
-  const [showForgotPassword, setShowForgotPassword] = useState(false);
-  const [resetEmail, setResetEmail] = useState('');
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    setError('');
-    try {
-      const result = await signInWithEmailAndPassword(auth, email, password);
-      onLogin(result.user.email || undefined, result.user.uid);
-    } catch (err: any) {
-      const code = err?.code || '';
-      if (code === 'auth/user-not-found' || code === 'auth/invalid-credential') {
-        setError('E-mail ou senha incorretos.');
-      } else if (code === 'auth/too-many-requests') {
-        setError('Muitas tentativas. Aguarde alguns minutos.');
-      } else {
-        setError('Erro ao fazer login. Tente novamente.');
-      }
-    } finally {
+    // Simulate API call and login
+    setTimeout(() => {
       setIsLoading(false);
-    }
+      onLogin(email);
+    }, 1000);
   };
 
   const handleGoogleLogin = async () => {
     setIsLoading(true);
-    setError('');
     try {
       const provider = new GoogleAuthProvider();
       const result = await signInWithPopup(auth, provider);
       onLogin(result.user.email || undefined, result.user.uid);
-    } catch (err: any) {
-      console.error("Erro ao fazer login com Google", err);
-      const code = err?.code || '';
-      if (code === 'auth/unauthorized-domain') {
-        setError('Domínio não autorizado no Firebase. O administrador precisa adicionar este domínio nas configurações do Firebase Authentication.');
-      } else if (code === 'auth/popup-closed-by-user') {
-        setError('Login cancelado. A janela foi fechada antes de concluir.');
-      } else if (code === 'auth/popup-blocked') {
-        setError('Pop-up bloqueado pelo navegador. Permita pop-ups para este site.');
-      } else {
-        setError('Erro ao fazer login com Google. Tente novamente.');
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleForgotPassword = async () => {
-    if (!resetEmail) {
-      setError('Digite seu e-mail para redefinir a senha.');
-      return;
-    }
-    setIsLoading(true);
-    setError('');
-    setSuccessMsg('');
-    try {
-      await sendPasswordResetEmail(auth, resetEmail);
-      setSuccessMsg('E-mail de redefinição enviado! Verifique sua caixa de entrada.');
-      setShowForgotPassword(false);
-    } catch (err: any) {
-      const code = err?.code || '';
-      if (code === 'auth/user-not-found') {
-        setError('E-mail não encontrado no sistema.');
-      } else if (code === 'auth/too-many-requests') {
-        setError('Muitas tentativas. Aguarde alguns minutos.');
-      } else {
-        setError('Erro ao enviar e-mail de redefinição.');
-      }
+    } catch (error) {
+      console.error("Erro ao fazer login com Google", error);
+      alert("Erro ao fazer login com Google. Verifique o console.");
     } finally {
       setIsLoading(false);
     }
@@ -117,20 +66,6 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             <p className="text-sm text-gray-500 mt-2">Acesse o painel de gestão logística</p>
           </div>
 
-          {error && (
-            <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
-              <AlertCircle size={18} className="flex-shrink-0" />
-              {error}
-            </div>
-          )}
-
-          {successMsg && (
-            <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-xl text-green-700 text-sm">
-              <CheckCircle size={18} className="flex-shrink-0" />
-              {successMsg}
-            </div>
-          )}
-
           <form className="space-y-6" onSubmit={handleSubmit}>
             <div>
               <label className="block text-sm font-bold text-gray-700 uppercase tracking-wider mb-2">
@@ -156,9 +91,9 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 <label className="block text-sm font-bold text-gray-700 uppercase tracking-wider">
                   Senha
                 </label>
-                <button type="button" onClick={() => { setShowForgotPassword(!showForgotPassword); setError(''); setSuccessMsg(''); setResetEmail(email); }} className="text-xs font-medium text-bordeaux hover:text-bordeaux/80 transition-colors">
+                <a href="#" className="text-xs font-medium text-bordeaux hover:text-bordeaux/80 transition-colors">
                   Esqueceu a senha?
-                </button>
+                </a>
               </div>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -174,27 +109,6 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 />
               </div>
             </div>
-
-            {showForgotPassword && (
-              <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl space-y-3">
-                <p className="text-sm text-gray-600">Digite seu e-mail para receber o link de redefinição:</p>
-                <input
-                  type="email"
-                  value={resetEmail}
-                  onChange={(e) => setResetEmail(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-bordeaux"
-                  placeholder="seu@email.com"
-                />
-                <button
-                  type="button"
-                  onClick={handleForgotPassword}
-                  disabled={isLoading}
-                  className="w-full py-2 bg-bordeaux text-white text-sm font-bold rounded-lg hover:bg-bordeaux/90 transition-all disabled:opacity-70"
-                >
-                  Enviar link de redefinição
-                </button>
-              </div>
-            )}
 
             <div className="flex items-center">
               <input
