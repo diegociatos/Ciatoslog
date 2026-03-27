@@ -23,7 +23,7 @@ import {
   User as UserIcon,
   ChevronLeft
 } from 'lucide-react';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { onAuthStateChanged, signOut, signInWithEmailAndPassword, updatePassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc, setDoc, onSnapshot, collection, updateDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import DashboardModule from './components/DashboardModule';
@@ -127,7 +127,7 @@ export interface RouteEntry {
 
 export interface Client {
   id: string;
-  ownerId: 'BD' | 'LOG'; // Identificador da empresa dona do registro
+  ownerId: 'BD' | 'LOG' | 'GLOBAL'; // Identificador da empresa dona do registro
   name: string;
   cnpj: string;
   type: string;
@@ -148,6 +148,8 @@ export interface Client {
   financeContact?: string;
   financePhone?: string;
   financePhone2?: string;
+  creditLimit?: number;
+  paymentTerms?: string;
 }
 
 export interface CommercialGoal {
@@ -175,11 +177,13 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  role: 'Administrador' | 'Operacional' | 'Financeiro' | 'Comercial' | 'Motorista' | 'Cliente' | 'Gestor';
+  password?: string;
+  role: string;
   status: 'Ativo' | 'Inativo';
   ownerId: 'BD' | 'LOG' | 'GLOBAL';
   customerId?: string;
   photoURL?: string;
+  isFirstLogin?: boolean;
 }
 
 export interface Driver {
@@ -333,71 +337,6 @@ const App: React.FC = () => {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
-        try {
-          // Check if user exists in Firestore by email
-          if (!firebaseUser.email) throw new Error("No email found");
-          const userDoc = await getDoc(doc(db, 'users', firebaseUser.email));
-          if (userDoc.exists()) {
-            setCurrentUser(userDoc.data() as User);
-            setIsAuthenticated(true);
-          } else {
-            // First time login or user not in DB yet. 
-            // If it's the admin, create the user.
-            const adminEmails = ['diegociatos@gmail.com', 'diego.garcia@grupociatos.com.br'];
-            if (adminEmails.includes(firebaseUser.email)) {
-              const newUser: User = {
-                id: firebaseUser.email,
-                name: firebaseUser.displayName || 'Admin',
-                email: firebaseUser.email,
-                role: 'Administrador',
-                status: 'Ativo',
-                ownerId: 'GLOBAL'
-              };
-              await setDoc(doc(db, 'users', firebaseUser.email), newUser);
-              setCurrentUser(newUser);
-              setIsAuthenticated(true);
-            } else {
-              // User not authorized
-              await signOut(auth);
-              alert('Usuário não autorizado. Contate o administrador.');
-              setIsAuthenticated(false);
-              setCurrentUser(null);
-            }
-          }
-        } catch (error) {
-          console.error("Error fetching user data:", error);
-          setIsAuthenticated(false);
-          setCurrentUser(null);
-        }
-      } else {
-        setIsAuthenticated(false);
-        setCurrentUser(null);
-      }
-      setIsAuthReady(true);
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  // Helper visual para badges de empresa
-  const getCompanyBadge = (id: string | undefined) => {
-    if (activeCompany !== 'GLOBAL' || !id) return null;
-    return (
-      <span className={`ml-2 px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest ${id === 'BD' ? 'bg-amber-100 text-amber-700' : 'bg-bordeaux/10 text-bordeaux'}`}>
-        {id}
-      </span>
-    );
-  };
-
-  const companyContextValue = useMemo(() => ({
-    activeCompany,
-    setActiveCompany,
-    getCompanyBadge
-  }), [activeCompany]);
-
   // Estados com ownerId definido
   const [vehicleTypes, setVehicleTypes] = useState<VehicleType[]>([
     { id: '1', name: 'Carreta LS (Lonada)', capacity: 32, volume: 90, active: true },
@@ -417,50 +356,8 @@ const App: React.FC = () => {
     }
   ]);
 
-  const [clients, setClients] = useState<Client[]>([
-    { 
-      id: 'C1', ownerId: 'BD', name: 'Vale S.A.', cnpj: '33.592.510/0001-54', type: 'Indústria', segment: 'Mineração', 
-      city: 'Belo Horizonte', state: 'MG', commercialRep: 'Ana Beatriz', status: 'Ativo', lastNegotiation: '2026-03-01',
-      decisionMakers: [], history: [], icmsContributor: 'Sim', taxRegime: 'Lucro Real', creditLimit: 500000, paymentTerms: '30 dias'
-    },
-    { 
-      id: 'C2', ownerId: 'LOG', name: 'Ambev', cnpj: '07.526.557/0001-00', type: 'Indústria', segment: 'Bebidas', 
-      city: 'São Paulo', state: 'SP', commercialRep: 'Ana Beatriz', status: 'Ativo', lastNegotiation: '2026-03-10',
-      decisionMakers: [], history: [], icmsContributor: 'Sim', taxRegime: 'Lucro Real', creditLimit: 300000, paymentTerms: '15 dias'
-    },
-    { 
-      id: 'C3', ownerId: 'GLOBAL', name: 'Gerdau', cnpj: '33.222.111/0001-99', type: 'Indústria', segment: 'Siderurgia', 
-      city: 'Porto Alegre', state: 'RS', commercialRep: 'Marcos Oliveira', status: 'Ativo', lastNegotiation: '2026-03-15',
-      decisionMakers: [], history: [], icmsContributor: 'Sim', taxRegime: 'Lucro Real', creditLimit: 800000, paymentTerms: '45 dias'
-    }
-  ]);
-
+  const [clients, setClients] = useState<Client[]>([]);
   const [users, setUsers] = useState<User[]>([]);
-
-  // Fetch users from Firestore
-  useEffect(() => {
-    if (!isAuthenticated || !currentUser) return;
-    
-    // Only admins can read all users, but users can read their own profile.
-    // For simplicity, if the user is not an admin, we just set their own profile in the users array.
-    if (currentUser.role !== 'Administrador') {
-      setUsers([currentUser]);
-      return;
-    }
-
-    const unsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
-      const usersData: User[] = [];
-      snapshot.forEach((doc) => {
-        usersData.push({ id: doc.id, ...doc.data() } as User);
-      });
-      setUsers(usersData);
-    }, (error) => {
-      console.error("Error fetching users:", error);
-    });
-
-    return () => unsubscribe();
-  }, [isAuthenticated, currentUser]);
-
   const [ctes, setCtes] = useState<CteRecord[]>([
     {
       id: 'CTE1', loadId: 'L1', cteNumber: '1001', emissionDate: '2026-03-11', cteValue: 15000.00,
@@ -500,32 +397,6 @@ const App: React.FC = () => {
   ]);
 
   const [pricingConfigs, setPricingConfigs] = useState<PricingConfig[]>([]);
-
-  // Fetch pricingConfigs from Firestore
-  useEffect(() => {
-    if (!isAuthenticated || !currentUser) return;
-    
-    const unsubscribe = onSnapshot(collection(db, 'pricingConfigs'), (snapshot) => {
-      const configsData: PricingConfig[] = [];
-      snapshot.forEach((doc) => {
-        configsData.push({ id: doc.id, ...doc.data() } as PricingConfig);
-      });
-      // If empty, set defaults
-      if (configsData.length === 0) {
-        setPricingConfigs([
-          { id: 'P1', ownerId: 'BD', federalTaxes: 14.33, icms: 12, directCost: 5, expenses: 10, minProfit: 15 },
-          { id: 'P2', ownerId: 'LOG', federalTaxes: 14.33, icms: 12, directCost: 5, expenses: 10, minProfit: 15 }
-        ]);
-      } else {
-        setPricingConfigs(configsData);
-      }
-    }, (error) => {
-      console.error("Error fetching pricing configs:", error);
-    });
-
-    return () => unsubscribe();
-  }, [isAuthenticated, currentUser]);
-
   const [loads, setLoads] = useState<Load[]>([
     { 
       id: 'L1', ownerId: 'BD', date: '2026-03-10', customer: 'Vale S.A.', origin: 'Belo Horizonte/MG', 
@@ -639,6 +510,183 @@ const App: React.FC = () => {
     { id: '14', name: 'Receita por Competência', group: 'RECEITA_BRUTA_COMPETENCIA' },
   ]);
 
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      console.log("Auth state changed:", firebaseUser?.email);
+      if (firebaseUser) {
+        try {
+          const email = firebaseUser.email?.toLowerCase();
+          if (!email) throw new Error("No email found");
+          
+          console.log("Checking Firestore for user:", email);
+          const userDoc = await getDoc(doc(db, 'users', email));
+          
+          if (userDoc.exists()) {
+            console.log("User found in Firestore:", email);
+            setCurrentUser(userDoc.data() as User);
+            setIsAuthenticated(true);
+          } else {
+            console.log("User NOT found in Firestore:", email);
+            if (email === 'diegociatos@gmail.com') {
+              console.log("Creating default admin user in Firestore...");
+              const newUser: User = {
+                id: email,
+                name: firebaseUser.displayName || 'Admin',
+                email: email,
+                role: 'Administrador',
+                status: 'Ativo',
+                ownerId: 'GLOBAL'
+              };
+              await setDoc(doc(db, 'users', email), newUser);
+              setCurrentUser(newUser);
+              setIsAuthenticated(true);
+            } else {
+              console.warn("Unauthorized user attempted login:", email);
+              await signOut(auth);
+              alert('Usuário não autorizado. Contate o administrador.');
+              setIsAuthenticated(false);
+              setCurrentUser(null);
+            }
+          }
+        } catch (error) {
+          console.error("Error fetching user data:", error);
+          setIsAuthenticated(false);
+          setCurrentUser(null);
+        }
+      } else {
+        setIsAuthenticated(false);
+        setCurrentUser(null);
+      }
+      setIsAuthReady(true);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (currentUser?.isFirstLogin) {
+      setIsProfileModalOpen(true);
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (currentUser) {
+      console.log("Current user loaded:", currentUser.email, "Role:", currentUser.role);
+    }
+  }, [currentUser]);
+
+  // Fetch clients from Firestore
+  useEffect(() => {
+    if (!isAuthenticated || !currentUser) return;
+    
+    const unsubscribe = onSnapshot(collection(db, 'clients'), (snapshot) => {
+      const clientsData: Client[] = [];
+      snapshot.forEach((doc) => {
+        clientsData.push({ id: doc.id, ...doc.data() } as Client);
+      });
+      // If empty, set defaults
+      if (clientsData.length === 0) {
+        const defaultClients: Client[] = [
+          { 
+            id: 'C1', ownerId: 'BD', name: 'Vale S.A.', cnpj: '33.592.510/0001-54', type: 'Indústria', segment: 'Mineração', 
+            city: 'Belo Horizonte', state: 'MG', commercialRep: 'Ana Beatriz', status: 'Ativo', lastNegotiation: '2026-03-01',
+            decisionMakers: [], history: [], icmsContributor: 'Sim', taxRegime: 'Lucro Real', creditLimit: 500000, paymentTerms: '30 dias'
+          },
+          { 
+            id: 'C2', ownerId: 'LOG', name: 'Ambev', cnpj: '07.526.557/0001-00', type: 'Indústria', segment: 'Bebidas', 
+            city: 'São Paulo', state: 'SP', commercialRep: 'Ana Beatriz', status: 'Ativo', lastNegotiation: '2026-03-10',
+            decisionMakers: [], history: [], icmsContributor: 'Sim', taxRegime: 'Lucro Real', creditLimit: 300000, paymentTerms: '15 dias'
+          },
+          { 
+            id: 'C3', ownerId: 'GLOBAL', name: 'Gerdau', cnpj: '33.222.111/0001-99', type: 'Indústria', segment: 'Siderurgia', 
+            city: 'Porto Alegre', state: 'RS', commercialRep: 'Marcos Oliveira', status: 'Ativo', lastNegotiation: '2026-03-15',
+            decisionMakers: [], history: [], icmsContributor: 'Sim', taxRegime: 'Lucro Real', creditLimit: 800000, paymentTerms: '45 dias'
+          }
+        ];
+        setClients(defaultClients);
+        // Save defaults to Firestore
+        defaultClients.forEach(c => setDoc(doc(db, 'clients', c.id), c));
+      } else {
+        setClients(clientsData);
+      }
+    }, (error) => {
+      console.error("Error fetching clients:", error);
+    });
+
+    return () => unsubscribe();
+  }, [isAuthenticated, currentUser]);
+
+  // Fetch users from Firestore
+  useEffect(() => {
+    if (!isAuthenticated || !currentUser) return;
+    
+    // Only admins can read all users, but users can read their own profile.
+    // For simplicity, if the user is not an admin, we just set their own profile in the users array.
+    if (currentUser.role !== 'Administrador') {
+      setUsers([currentUser]);
+      return;
+    }
+
+    const unsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
+      const usersData: User[] = [];
+      snapshot.forEach((doc) => {
+        usersData.push({ id: doc.id, ...doc.data() } as User);
+      });
+      console.log("Users updated from Firestore:", usersData.length, "users found.");
+      setUsers(usersData);
+    }, (error) => {
+      console.error("Error fetching users from Firestore:", error);
+      if (error.message.includes('permission-denied')) {
+        console.warn("Permission denied while fetching users. This is expected if you are not an admin.");
+      } else {
+        alert("Erro ao carregar lista de usuários: " + error.message);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [isAuthenticated, currentUser]);
+
+  // Fetch pricingConfigs from Firestore
+  useEffect(() => {
+    if (!isAuthenticated || !currentUser) return;
+    
+    const unsubscribe = onSnapshot(collection(db, 'pricingConfigs'), (snapshot) => {
+      const configsData: PricingConfig[] = [];
+      snapshot.forEach((doc) => {
+        configsData.push({ id: doc.id, ...doc.data() } as PricingConfig);
+      });
+      // If empty, set defaults
+      if (configsData.length === 0) {
+        setPricingConfigs([
+          { id: 'P1', ownerId: 'BD', federalTaxes: 14.33, icms: 12, directCost: 5, expenses: 10, minProfit: 15 },
+          { id: 'P2', ownerId: 'LOG', federalTaxes: 14.33, icms: 12, directCost: 5, expenses: 10, minProfit: 15 }
+        ]);
+      } else {
+        setPricingConfigs(configsData);
+      }
+    }, (error) => {
+      console.error("Error fetching pricing configs:", error);
+    });
+
+    return () => unsubscribe();
+  }, [isAuthenticated, currentUser]);
+
+  // Helper visual para badges de empresa
+  const getCompanyBadge = (id: string | undefined) => {
+    if (activeCompany !== 'GLOBAL' || !id) return null;
+    return (
+      <span className={`ml-2 px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest ${id === 'BD' ? 'bg-amber-100 text-amber-700' : 'bg-bordeaux/10 text-bordeaux'}`}>
+        {id}
+      </span>
+    );
+  };
+
+  const companyContextValue = useMemo(() => ({
+    activeCompany,
+    setActiveCompany,
+    getCompanyBadge
+  }), [activeCompany]);
+
   // LÓGICA DE FILTRAGEM GLOBAL
   const filteredLoads = useMemo(() => {
     if (!currentUser) return [];
@@ -663,6 +711,103 @@ const App: React.FC = () => {
     if (currentUser.role === 'Cliente') return transactions.filter(t => t.clientName === currentUser.name);
     return activeCompany === 'GLOBAL' ? transactions : transactions.filter(t => t.ownerId === activeCompany);
   }, [transactions, activeCompany, currentUser]);
+
+  const navItems = useMemo(() => {
+    if (!currentUser) return [];
+    
+    const allItems = [
+      { id: Module.Dashboard, icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
+      { id: Module.Comercial, icon: <Briefcase size={20} />, label: 'Comercial' },
+      { id: Module.Clientes, icon: <Building2 size={20} />, label: 'Clientes / CRM' },
+      { id: Module.Programacao, icon: <CalendarDays size={20} />, label: 'Programação' },
+      { id: Module.Motoristas, icon: <Contact2 size={20} />, label: 'Motoristas' },
+      { id: Module.EmissaoCTE, icon: <FileText size={20} />, label: 'Emissão de CTE' },
+      { id: Module.GestaoCTE, icon: <FileText size={20} />, label: 'Gestão de CTE' },
+      { id: Module.Transportes, icon: <Truck size={20} />, label: 'Gestão de Transportes' },
+      { id: Module.Financeiro, icon: <CircleDollarSign size={20} />, label: 'Financeiro' },
+      { id: Module.Usuarios, icon: <Users size={20} />, label: 'Usuários' },
+      { id: Module.Precificacao, icon: <CircleDollarSign size={20} />, label: 'Precificação' },
+      { id: Module.Configuracoes, icon: <Settings size={20} />, label: 'Configurações' },
+    ];
+
+    const role = currentUser.role;
+    // Se for Administrador (ou contiver Administrador no nome), vê tudo sem restrições
+    if (role.includes('Administrador')) return allItems;
+
+    // Filtro para outros papéis
+    return allItems.filter(item => {
+      const isGestor = role.includes('Gestor');
+      const isComercial = role.includes('Comercial');
+      const isFinanceiro = role.includes('Financeiro');
+      const isOperacional = role.includes('Operacional');
+      const isCliente = role.includes('Cliente');
+      
+      switch (item.id) {
+        case Module.Dashboard:
+          return isComercial || isFinanceiro || isOperacional || isGestor;
+        case Module.Comercial:
+        case Module.Clientes:
+          return isComercial || isFinanceiro || isGestor;
+        case Module.Programacao:
+        case Module.Motoristas:
+        case Module.EmissaoCTE:
+        case Module.GestaoCTE:
+          return isComercial || isOperacional || isFinanceiro || isGestor;
+        case Module.Transportes:
+          return isOperacional || isComercial || isCliente || isGestor;
+        case Module.Financeiro:
+        case Module.Usuarios:
+        case Module.Precificacao:
+          return isFinanceiro || isGestor;
+        case Module.Configuracoes:
+          return isGestor;
+        default:
+          return false;
+      }
+    });
+  }, [currentUser, currentUser?.role]);
+
+  const handleLogout = async () => {
+    console.log("Iniciando logout...");
+    try {
+      setIsUserMenuOpen(false);
+      
+      // Feedback imediato limpando o estado local
+      setIsAuthenticated(false);
+      setCurrentUser(null);
+      
+      // Logout do Firebase
+      await signOut(auth);
+      
+      // Forçamos o recarregamento da página para garantir um estado limpo
+      window.location.href = '/';
+      console.log("Logout concluído com sucesso.");
+    } catch (error) {
+      console.error("Erro ao sair:", error);
+      // Mesmo com erro, garantimos que o estado local seja limpo
+      setIsAuthenticated(false);
+      setCurrentUser(null);
+      window.location.href = '/';
+    }
+  };
+
+  const handleUpdateProfile = async (data: { name: string; photoURL?: string; password?: string; isFirstLogin?: boolean }) => {
+    if (!currentUser || !auth.currentUser) return;
+    try {
+      if (data.password) {
+        await updatePassword(auth.currentUser, data.password);
+      }
+      await updateDoc(doc(db, 'users', currentUser.id), data);
+      setCurrentUser({ ...currentUser, ...data });
+      setIsProfileModalOpen(false);
+      if (data.password) {
+        alert("Perfil atualizado com sucesso!");
+      }
+    } catch (error: any) {
+      console.error("Erro ao atualizar perfil:", error);
+      alert("Erro ao atualizar perfil: " + error.message);
+    }
+  };
 
   const addLoad = (newLoad: Omit<Load, 'id' | 'date' | 'ownerId'>) => {
     const load: Load = {
@@ -691,68 +836,30 @@ const App: React.FC = () => {
     setTransactions(prev => prev.map(t => t.id === updatedTransaction.id ? updatedTransaction : t));
   };
 
-  const navItems = useMemo(() => {
-    if (!currentUser) return [];
-    
-    const allItems = [
-      { id: Module.Dashboard, icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
-      { id: Module.Comercial, icon: <Briefcase size={20} />, label: 'Comercial' },
-      { id: Module.Clientes, icon: <Building2 size={20} />, label: 'Clientes / CRM' },
-      { id: Module.Programacao, icon: <CalendarDays size={20} />, label: 'Programação' },
-      { id: Module.Motoristas, icon: <Contact2 size={20} />, label: 'Motoristas' },
-      { id: Module.EmissaoCTE, icon: <FileText size={20} />, label: 'Emissão de CTE' },
-      { id: Module.GestaoCTE, icon: <FileText size={20} />, label: 'Gestão de CTE' },
-      { id: Module.Transportes, icon: <Truck size={20} />, label: 'Gestão de Transportes' },
-      { id: Module.Financeiro, icon: <CircleDollarSign size={20} />, label: 'Financeiro' },
-      { id: Module.Usuarios, icon: <Users size={20} />, label: 'Usuários' },
-      { id: Module.Precificacao, icon: <CircleDollarSign size={20} />, label: 'Precificação' },
-      { id: Module.Configuracoes, icon: <Settings size={20} />, label: 'Configurações' },
-    ];
-
-    // Se for Administrador, vê tudo sem restrições
-    if (currentUser.role === 'Administrador') return allItems;
-
-    // Filtro para outros papéis
-    return allItems.filter(item => {
-      const role = currentUser.role;
-      
-      switch (item.id) {
-        case Module.Dashboard:
-          return ['Comercial', 'Financeiro', 'Operacional', 'Gestor'].includes(role);
-        case Module.Comercial:
-        case Module.Clientes:
-          return ['Comercial', 'Financeiro', 'Gestor'].includes(role);
-        case Module.Programacao:
-        case Module.Motoristas:
-        case Module.EmissaoCTE:
-        case Module.GestaoCTE:
-          return ['Comercial', 'Operacional', 'Financeiro', 'Gestor'].includes(role);
-        case Module.Transportes:
-          return ['Operacional', 'Comercial', 'Cliente', 'Gestor'].includes(role);
-        case Module.Financeiro:
-          return ['Financeiro', 'Gestor'].includes(role);
-        case Module.Configuracoes:
-          return ['Gestor'].includes(role); // Gestores também podem ver configurações básicas
-        default:
-          return false;
-      }
-    });
-  }, [currentUser, currentUser?.role]);
-
   const renderContent = () => {
     if (!currentUser) return null;
     switch (activeModule) {
       case Module.Dashboard:
-        if (currentUser.role === 'Cliente') {
+        const role = currentUser.role;
+        const isCliente = role.includes('Cliente');
+        const isComercial = role.includes('Comercial');
+        const isOperacional = role.includes('Operacional');
+        const isFinanceiro = role.includes('Financeiro');
+        const isGestor = role.includes('Gestor');
+
+        if (isGestor) {
+          return <DashboardModule unit={activeCompany} loads={filteredLoads} clients={filteredClients} drivers={filteredDrivers} transactions={filteredTransactions} users={users} dreCategories={dreCategories} ctes={ctes} currentUser={currentUser} commissionRules={commissionRules} />;
+        }
+        if (isCliente) {
           return <ClientDashboard loads={filteredLoads} currentUser={currentUser} goToTransportManagement={() => setActiveModule(Module.Transportes)} />;
         }
-        if (currentUser.role === 'Comercial') {
+        if (isComercial) {
           return <CommercialDashboard loads={filteredLoads} clients={filteredClients} currentUser={currentUser} commercialGoals={commercialGoals} commissionRules={commissionRules} />;
         }
-        if (currentUser.role === 'Operacional') {
+        if (isOperacional) {
           return <ProgrammerDashboard loads={filteredLoads} drivers={filteredDrivers} currentUser={currentUser} goToProgramming={() => setActiveModule(Module.Programacao)} commissionRules={commissionRules} />;
         }
-        if (currentUser.role === 'Financeiro') {
+        if (isFinanceiro) {
           return <FinancialDashboard transactions={filteredTransactions} setTransactions={setTransactions} bankAccounts={bankAccounts} currentUser={currentUser} ctes={ctes} />;
         }
         return <DashboardModule unit={activeCompany} loads={filteredLoads} clients={filteredClients} drivers={filteredDrivers} transactions={filteredTransactions} users={users} dreCategories={dreCategories} ctes={ctes} currentUser={currentUser} commissionRules={commissionRules} />;
@@ -785,7 +892,7 @@ const App: React.FC = () => {
       case Module.EmissaoCTE:
         return <CteEmissionModule loads={filteredLoads} updateLoad={updateLoad} currentUser={currentUser} ctes={ctes} setCtes={setCtes} />;
       case Module.Usuarios:
-        return <UsersModule users={users} setUsers={setUsers} />;
+        return <UsersModule users={users} setUsers={setUsers} clients={clients} />;
       case Module.Precificacao:
         return <PricingModule pricingConfigs={pricingConfigs} setPricingConfigs={setPricingConfigs} />;
       case Module.Configuracoes:
@@ -820,43 +927,79 @@ const App: React.FC = () => {
   }
 
   if (!isAuthenticated || !currentUser) {
-    return <Login onLogin={(email) => {
-      // Temporary fallback for local dev without Firebase Auth
-      setIsAuthenticated(true);
-      if (email) {
-        const user = users.find(u => u.email === email);
-        if (user) {
-          setCurrentUser(user);
+    return <Login onLogin={async (emailInput, password) => {
+      const email = emailInput?.toLowerCase().trim();
+      console.log("Attempting login for:", email);
+      if (email && password) {
+        try {
+          console.log("Calling signInWithEmailAndPassword...");
+          await signInWithEmailAndPassword(auth, email, password);
+          console.log("Login successful for:", email);
+        } catch (error: any) {
+          console.error("Login error:", error);
+          
+          const authErrorCodes = [
+            'auth/user-not-found',
+            'auth/wrong-password',
+            'auth/invalid-credential',
+            'auth/invalid-email',
+            'auth/user-disabled'
+          ];
+
+          // Migration logic: if user not in Auth but in Firestore
+          if (authErrorCodes.includes(error.code)) {
+            console.log("Auth error caught, checking Firestore for migration/mismatch...");
+            try {
+              const userDoc = await getDoc(doc(db, 'users', email));
+              if (userDoc.exists()) {
+                const userData = userDoc.data() as any;
+                console.log("User found in Firestore, checking password...");
+                if (userData.password === password) {
+                  // Password matches Firestore! Try to create Auth user.
+                  console.log("Password matches Firestore, attempting to create Auth user...");
+                  try {
+                    await createUserWithEmailAndPassword(auth, email, password);
+                    console.log("Auth user created successfully via migration.");
+                    return;
+                  } catch (createError: any) {
+                    console.error("Error creating Auth user during migration:", createError);
+                    if (createError.code === 'auth/operation-not-allowed') {
+                      alert("O login com E-mail/Senha não está habilitado no Firebase Console. Por favor, habilite-o em Authentication > Sign-in method.");
+                      return;
+                    }
+                    if (createError.code === 'auth/email-already-in-use') {
+                      alert("Este usuário já existe no sistema de autenticação, mas a senha fornecida não coincide com a do serviço de autenticação. Tente uma senha anterior ou use o login com Google.");
+                      return;
+                    }
+                    throw createError;
+                  }
+                } else {
+                  console.warn("Password mismatch with Firestore.");
+                  alert("E-mail ou senha incorretos (conforme registros do sistema).");
+                  return;
+                }
+              } else {
+                console.warn("User not found in Firestore either (ID checked:", email, ")");
+              }
+            } catch (firestoreError: any) {
+              console.error("Migration/Firestore check error:", firestoreError);
+              if (firestoreError.code === 'auth/operation-not-allowed') {
+                alert("O login com E-mail/Senha não está habilitado no Firebase Console. Por favor, habilite-o em Authentication > Sign-in method.");
+                return;
+              }
+            }
+            alert("E-mail ou senha incorretos!");
+          } else if (error.code === 'auth/operation-not-allowed') {
+            alert("O login com E-mail/Senha não está habilitado no Firebase Console. Por favor, habilite-o em Authentication > Sign-in method.");
+          } else if (error.code === 'auth/network-request-failed') {
+            alert("Erro de conexão: O sistema não conseguiu se comunicar com o Firebase. Verifique sua internet, desative bloqueadores de anúncios ou tente abrir em uma nova aba.");
+          } else {
+            alert("Erro ao fazer login: " + error.message);
+          }
         }
       }
     }} />;
   }
-
-  const handleLogout = async () => {
-    console.log("Iniciando logout...");
-    try {
-      await signOut(auth);
-      // Forçamos o reset do estado local caso o onAuthStateChanged não dispare (ex: login simulado)
-      setIsAuthenticated(false);
-      setCurrentUser(null);
-      setIsUserMenuOpen(false);
-      console.log("Logout concluído com sucesso.");
-    } catch (error) {
-      console.error("Erro ao sair:", error);
-      alert("Erro ao sair do sistema. Tente novamente.");
-    }
-  };
-
-  const handleUpdateProfile = async (data: { name: string; photoURL?: string }) => {
-    if (!currentUser) return;
-    try {
-      await updateDoc(doc(db, 'users', currentUser.id), data);
-      setCurrentUser({ ...currentUser, ...data });
-      setIsProfileModalOpen(false);
-    } catch (error) {
-      console.error("Erro ao atualizar perfil:", error);
-    }
-  };
 
   return (
     <CompanyContext.Provider value={companyContextValue}>
@@ -880,14 +1023,17 @@ const App: React.FC = () => {
           </nav>
           <div className="p-4 border-t border-white/10 space-y-2">
             <button 
-              onClick={handleLogout} 
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-red-500/20 text-white/80 hover:text-white transition-all group"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleLogout();
+              }} 
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-red-500/10 hover:bg-red-500 text-red-200 hover:text-white transition-all group border border-red-500/20"
               title="Sair do Sistema"
             >
-              <div className="shrink-0"><LogOut size={20} className="group-hover:text-red-400" /></div>
-              {isSidebarOpen && <span className="font-medium whitespace-nowrap">Sair do Sistema</span>}
+              <div className="shrink-0"><LogOut size={20} className="group-hover:scale-110 transition-transform" /></div>
+              {isSidebarOpen && <span className="font-bold whitespace-nowrap">Sair do Sistema</span>}
             </button>
-            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="w-full flex items-center justify-center p-2 rounded-lg hover:bg-white/10 transition-colors">
+            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="w-full flex items-center justify-center p-2 rounded-lg hover:bg-white/10 transition-colors text-white/50 hover:text-white">
               {isSidebarOpen ? <ChevronLeft size={20} /> : <Menu size={20} />}
             </button>
           </div>
@@ -909,7 +1055,7 @@ const App: React.FC = () => {
                     <div className="flex flex-col pr-6">
                       <span className="text-[10px] font-black text-gray-400 uppercase leading-none mb-1 tracking-widest">Empresa Ativa</span>
                       <span className="text-xs font-black text-bordeaux uppercase leading-none">
-                        {activeCompany === 'BD' ? 'BD Transportes' : activeCompany === 'LOG' ? 'Ciatoslog' : 'Visão Global'}
+                        {activeCompany === 'BD' ? 'BD Transportes' : activeCompany === 'LOG' ? 'Logística Brasil' : 'Visão Global'}
                       </span>
                     </div>
                     <ChevronDown size={16} className="text-gray-300 absolute right-4" />
@@ -918,7 +1064,7 @@ const App: React.FC = () => {
                   {/* DROPDOWN ELEGANTE */}
                   <div className="absolute top-full left-0 mt-2 w-64 bg-white border border-gray-100 rounded-3xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-[100] py-3 overflow-hidden">
                      <CompanyOption id="BD" name="BD Transportes" cnpj="00.000.000/0001-00" active={activeCompany === 'BD'} onClick={() => setActiveCompany('BD')} />
-                     <CompanyOption id="LOG" name="Ciatoslog" cnpj="00.000.000/0001-01" active={activeCompany === 'LOG'} onClick={() => setActiveCompany('LOG')} />
+                     <CompanyOption id="LOG" name="Logística Brasil" cnpj="00.000.000/0001-01" active={activeCompany === 'LOG'} onClick={() => setActiveCompany('LOG')} />
                      <div className="h-[1px] bg-gray-100 my-2 mx-4"></div>
                      <CompanyOption id="GLOBAL" name="Visão Consolidada" cnpj="Holding Group" active={activeCompany === 'GLOBAL'} onClick={() => setActiveCompany('GLOBAL')} icon={<Globe size={18}/>} />
                   </div>
@@ -926,14 +1072,25 @@ const App: React.FC = () => {
               )}
             </div>
 
-            <div className="flex items-center gap-6">
+            <div className="flex items-center gap-4">
               <button className="relative p-2 text-gray-500 hover:bg-gray-100 rounded-full transition-colors"><Bell size={20} /><span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span></button>
               
+              <button 
+                onClick={handleLogout}
+                className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-all"
+                title="Sair"
+              >
+                <LogOut size={20} />
+              </button>
+              
               {/* SELETOR DE USUÁRIO (SIMULAÇÃO DE LOGIN) */}
-              <div className="relative border-l border-gray-200 pl-6">
+              <div className="relative border-l border-gray-200 pl-4">
                 <div 
-                  onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                  className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 p-2 rounded-2xl transition-all"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsUserMenuOpen(!isUserMenuOpen);
+                  }}
+                  className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 p-2 rounded-2xl transition-all border border-transparent hover:border-gray-100"
                 >
                   <div className="text-right hidden sm:block">
                     <p className="text-sm font-bold text-gray-800">{currentUser.name}</p>
@@ -970,10 +1127,15 @@ const App: React.FC = () => {
                           Meu Perfil
                         </button>
                         <button 
-                          onClick={handleLogout}
-                          className="w-full px-4 py-2 text-sm font-bold text-red-600 hover:bg-red-50 rounded-xl transition-colors text-left flex items-center gap-2"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleLogout();
+                          }}
+                          className="w-full px-4 py-3 text-sm font-black text-red-600 hover:bg-red-50 rounded-xl transition-colors text-left flex items-center gap-3 border border-transparent hover:border-red-100"
                         >
-                          <LogOut size={16} />
+                          <div className="p-1.5 bg-red-100 rounded-lg">
+                            <LogOut size={16} />
+                          </div>
                           Sair do Sistema
                         </button>
                       </div>
@@ -991,18 +1153,43 @@ const App: React.FC = () => {
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
               <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-bordeaux text-white">
-                <h3 className="text-xl font-bold">Meu Perfil</h3>
-                <button onClick={() => setIsProfileModalOpen(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+                <div>
+                  <h3 className="text-xl font-bold">Meu Perfil</h3>
+                  {currentUser.isFirstLogin && (
+                    <p className="text-xs text-white/70 mt-1">Primeiro acesso: atualize seus dados e senha.</p>
+                  )}
+                </div>
+                <button 
+                  onClick={() => {
+                    if (currentUser.isFirstLogin) {
+                      alert("Por favor, atualize seus dados e altere sua senha no seu primeiro acesso.");
+                      return;
+                    }
+                    setIsProfileModalOpen(false);
+                  }} 
+                  className="p-2 hover:bg-white/10 rounded-full transition-colors"
+                >
                   <X size={20} />
                 </button>
               </div>
               <form onSubmit={(e) => {
                 e.preventDefault();
                 const formData = new FormData(e.currentTarget);
-                handleUpdateProfile({
+                const newPassword = formData.get('password') as string;
+                const updateData: any = {
                   name: formData.get('name') as string,
                   photoURL: formData.get('photoURL') as string
-                });
+                };
+                
+                if (newPassword) {
+                  updateData.password = newPassword;
+                  updateData.isFirstLogin = false;
+                } else if (currentUser.isFirstLogin) {
+                  alert("Por favor, defina uma nova senha no seu primeiro acesso.");
+                  return;
+                }
+
+                handleUpdateProfile(updateData);
               }} className="p-8 space-y-6">
                 <div className="flex flex-col items-center gap-4">
                   <div className="relative group">
@@ -1048,21 +1235,33 @@ const App: React.FC = () => {
                       className="w-full p-4 bg-gray-100 border border-gray-200 rounded-2xl text-gray-400 cursor-not-allowed"
                     />
                   </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 ml-1">Nova Senha</label>
+                    <input 
+                      name="password"
+                      type="password"
+                      className="w-full p-4 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-bordeaux focus:border-transparent outline-none transition-all"
+                      placeholder="Deixe em branco para não alterar"
+                      required={currentUser.isFirstLogin}
+                    />
+                  </div>
                 </div>
 
                 <div className="pt-4 flex gap-3">
-                  <button 
-                    type="button"
-                    onClick={() => setIsProfileModalOpen(false)}
-                    className="flex-1 py-4 px-6 border border-gray-200 rounded-2xl font-bold text-gray-600 hover:bg-gray-50 transition-all"
-                  >
-                    Cancelar
-                  </button>
+                  {!currentUser.isFirstLogin && (
+                    <button 
+                      type="button"
+                      onClick={() => setIsProfileModalOpen(false)}
+                      className="flex-1 py-4 px-6 border border-gray-200 rounded-2xl font-bold text-gray-600 hover:bg-gray-50 transition-all"
+                    >
+                      Cancelar
+                    </button>
+                  )}
                   <button 
                     type="submit"
                     className="flex-1 py-4 px-6 bg-bordeaux text-white rounded-2xl font-bold hover:shadow-lg hover:shadow-bordeaux/20 transition-all"
                   >
-                    Salvar Alterações
+                    {currentUser.isFirstLogin ? 'Confirmar Dados e Senha' : 'Salvar Alterações'}
                   </button>
                 </div>
               </form>

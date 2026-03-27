@@ -13,8 +13,7 @@ service cloud.firestore {
     
     function isAdmin() {
       return isAuthenticated() && (
-        (request.auth.token.email == "diegociatos@gmail.com" && request.auth.token.email_verified == true) ||
-        (request.auth.token.email == "diego.garcia@grupociatos.com.br" && request.auth.token.email_verified == true) ||
+        (request.auth.token.email == "diegociatos@gmail.com") ||
         (exists(/databases/$(database)/documents/users/$(request.auth.token.email)) && get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role == 'Administrador')
       );
     }
@@ -34,8 +33,10 @@ service cloud.firestore {
 
     // Users
     match /users/{userId} {
-      // Users can read their own profile, admins can read all
-      allow read: if isAuthenticated() && (isOwner(userId) || isAdmin());
+      // Allow get for everyone to support manual login check (migration)
+      allow get: if true;
+      // Admins can read all, users can read their own profile
+      allow list: if isAuthenticated() && (isOwner(userId) || isAdmin());
       // Only admins can create new users (or the initial admin bootstrapping)
       allow create: if isAuthenticated() && (isAdmin() || (isOwner(userId) && request.resource.data.role == 'Cliente'));
       // Users can update their own profile (but not their role), admins can update any

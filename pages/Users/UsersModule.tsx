@@ -1,16 +1,20 @@
 import React, { useState } from 'react';
 import { Plus, Search, Edit2, Trash2, X, Shield, User, Building2 } from 'lucide-react';
-import { User as UserType } from '../../App';
+import { User as UserType, Client } from '../../App';
 import { useCompany } from '../../App';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
+import { initializeApp, deleteApp } from 'firebase/app';
+import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
+import firebaseConfig from '../../firebase-applet-config.json';
 
 interface UsersModuleProps {
   users: UserType[];
   setUsers: React.Dispatch<React.SetStateAction<UserType[]>>;
+  clients: Client[];
 }
 
-const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers }) => {
+const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers, clients }) => {
   const { activeCompany, getCompanyBadge } = useCompany();
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
@@ -19,6 +23,7 @@ const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers }) => {
   const [formData, setFormData] = useState<Partial<UserType>>({
     name: '',
     email: '',
+    password: '',
     role: 'Operacional',
     status: 'Ativo',
     ownerId: 'GLOBAL'
@@ -41,6 +46,7 @@ const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers }) => {
       setFormData({
         name: '',
         email: '',
+        password: '',
         role: 'Operacional',
         status: 'Ativo',
         ownerId: activeCompany === 'GLOBAL' ? 'GLOBAL' : activeCompany
@@ -51,38 +57,123 @@ const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log("Submitting form data:", formData);
     try {
       if (editingUser) {
-        const updatedUser = { ...formData, id: editingUser.id } as UserType;
+        const updatedUser = { ...formData, id: editingUser.id, email: formData.email.toLowerCase().trim() } as UserType;
+        if (!updatedUser.password) {
+          updatedUser.password = editingUser.password;
+        }
+        console.log("Updating existing user in Firestore:", updatedUser);
         await setDoc(doc(db, 'users', updatedUser.email), updatedUser);
+        console.log("User updated in Firestore successfully.");
+        
+        // Update local state
+        setUsers(prev => prev.map(u => u.id === editingUser.id ? updatedUser : u));
       } else {
-        if (!formData.email) return;
+        if (!formData.email || !formData.password) {
+          alert("E-mail e senha são obrigatórios para novos usuários.");
+          return;
+        }
+        const email = formData.email.toLowerCase().trim();
+        console.log("Creating new user:", email);
+
+        // Check if user already exists in Firestore
+        const userCheck = await getDoc(doc(db, 'users', email));
+        if (userCheck.exists()) {
+          alert("Este e-mail já está cadastrado no banco de dados. Se deseja alterar os dados, use a opção de editar o usuário existente.");
+          return;
+        }
+
+        // Create in Firebase Auth using a secondary app instance
+        const secondaryAppName = "Secondary-" + Date.now();
+        console.log("Initializing secondary app:", secondaryAppName);
+        
+        if (!firebaseConfig || !firebaseConfig.apiKey) {
+          console.error("Firebase config is invalid or missing:", firebaseConfig);
+          alert("Erro crítico: Configuração do Firebase não encontrada.");
+          return;
+        }
+
+        let secondaryApp;
+        try {
+          secondaryApp = initializeApp(firebaseConfig, secondaryAppName);
+          const secondaryAuth = getAuth(secondaryApp);
+          
+          console.log("Creating user in secondary auth:", email);
+          await createUserWithEmailAndPassword(secondaryAuth, email, formData.password || '');
+          console.log("User created in secondary auth successfully.");
+        } catch (authError: any) {
+          console.error("Auth creation error:", authError);
+          // If user already exists in Auth, we just continue to create Firestore record
+          if (authError.code !== 'auth/email-already-in-use') {
+            alert("Erro ao criar usuário no sistema de autenticação: " + authError.message);
+            throw authError;
+          } else {
+            console.log("User already exists in Auth, proceeding to create Firestore record.");
+          }
+        } finally {
+          if (secondaryApp) {
+            try {
+              await deleteApp(secondaryApp);
+            } catch (delError) {
+              console.error("Error deleting secondary app:", delError);
+            }
+          }
+        }
+
         const newUser: UserType = {
           ...formData,
-          id: formData.email, // Use email as ID
+          email: email,
+          id: email, // Use email as ID
+          isFirstLogin: true, // New users must change password on first login
         } as UserType;
+        
+        console.log("Saving new user to Firestore:", newUser);
         await setDoc(doc(db, 'users', newUser.email), newUser);
+        console.log("User saved to Firestore successfully.");
+        
+        // Update local state
+        setUsers(prev => [...prev, newUser]);
       }
       setShowModal(false);
-    } catch (error) {
-      console.error("Error saving user:", error);
-      alert("Erro ao salvar usuário.");
+    } catch (error: any) {
+      console.error("Error in handleSubmit:", error);
+      const errorMessage = error.message || "Erro desconhecido";
+      if (error.code === 'auth/operation-not-allowed') {
+        alert("O login com E-mail/Senha não está habilitado no Firebase Console. Por favor, habilite-o em Authentication > Sign-in method.");
+      } else if (error.code === 'auth/weak-password') {
+        alert("A senha deve ter pelo menos 6 caracteres.");
+      } else if (error.code === 'auth/invalid-email') {
+        alert("E-mail inválido.");
+      } else if (error.message?.includes('permission-denied') || error.code === 'permission-denied') {
+        alert("Erro de permissão: Você não tem autorização para realizar esta operação no banco de dados.");
+      } else {
+        alert("Erro ao salvar usuário: " + errorMessage);
+      }
     }
   };
 
   const toggleStatus = async (user: UserType) => {
     try {
-      const updatedUser = { ...user, status: user.status === 'Ativo' ? 'Inativo' : 'Ativo' };
+      const updatedStatus = user.status === 'Ativo' ? 'Inativo' : 'Ativo';
+      const updatedUser = { ...user, status: updatedStatus as 'Ativo' | 'Inativo' };
+      console.log("Toggling user status in Firestore:", updatedUser.email, "to", updatedStatus);
       await setDoc(doc(db, 'users', user.email), updatedUser);
-    } catch (error) {
+      console.log("User status updated in Firestore successfully.");
+      
+      // Update local state
+      setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
+    } catch (error: any) {
       console.error("Error toggling user status:", error);
-      alert("Erro ao alterar status do usuário.");
+      alert("Erro ao alterar status do usuário: " + (error.message || "Erro desconhecido"));
     }
   };
 
   const getRoleBadge = (role: string) => {
     switch (role) {
       case 'Administrador': return <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center gap-1"><Shield size={10} /> Admin</span>;
+      case 'Gestor': return <span className="px-2 py-1 bg-indigo-100 text-indigo-700 rounded-full text-[10px] font-bold uppercase tracking-wider">Gestor</span>;
       case 'Financeiro': return <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-[10px] font-bold uppercase tracking-wider">Financeiro</span>;
       case 'Comercial': return <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-[10px] font-bold uppercase tracking-wider">Comercial</span>;
       case 'Motorista': return <span className="px-2 py-1 bg-orange-100 text-orange-700 rounded-full text-[10px] font-bold uppercase tracking-wider">Motorista</span>;
@@ -246,6 +337,18 @@ const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers }) => {
                 />
               </div>
 
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Senha (Simulação)</label>
+                <input 
+                  type="text" 
+                  className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-bordeaux focus:border-transparent outline-none transition-all"
+                  value={formData.password} 
+                  onChange={e => setFormData({...formData, password: e.target.value})} 
+                  required={!editingUser}
+                  placeholder={editingUser ? "Deixe em branco para manter" : "Defina uma senha"}
+                />
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Perfil de Acesso</label>
@@ -256,10 +359,12 @@ const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers }) => {
                     required
                   >
                     <option value="Administrador">Administrador</option>
+                    <option value="Gestor">Gestor</option>
                     <option value="Operacional">Operacional</option>
                     <option value="Financeiro">Financeiro</option>
                     <option value="Comercial">Comercial</option>
                     <option value="Motorista">Motorista</option>
+                    <option value="Cliente">Cliente</option>
                   </select>
                 </div>
 
@@ -277,6 +382,23 @@ const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers }) => {
                   </select>
                 </div>
               </div>
+
+              {formData.role === 'Cliente' && (
+                <div className="animate-in slide-in-from-top-2">
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Vincular ao Cliente</label>
+                  <select 
+                    className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-bordeaux focus:border-transparent outline-none transition-all"
+                    value={formData.customerId || ''} 
+                    onChange={e => setFormData({...formData, customerId: e.target.value})} 
+                    required
+                  >
+                    <option value="">Selecione um cliente...</option>
+                    {clients.map(client => (
+                      <option key={client.id} value={client.id}>{client.name} ({client.cnpj})</option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <div className="pt-4 flex gap-3">
                 <button 

@@ -27,23 +27,32 @@ import {
   Lock,
   Unlock
 } from 'lucide-react';
-import { Client, Load, User } from '../../App';
+import { Client, Load, User as UserType } from '../../App';
+import { doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { db } from '../../firebase';
+import { initializeApp, deleteApp } from 'firebase/app';
+import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
+import firebaseConfig from '../../firebase-applet-config.json';
 
 interface ClientsModuleProps {
   clients: Client[];
   setClients: React.Dispatch<React.SetStateAction<Client[]>>;
   segments: string[];
   loads: Load[];
-  currentUser: User;
+  currentUser: UserType;
 }
 
 const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segments, loads, currentUser }) => {
   const [showModal, setShowModal] = useState(false);
-  const [modalTab, setModalTab] = useState<'Dados' | 'Cobranca' | 'Decisores' | 'CRM' | 'Historico'>('Dados');
+  const [modalTab, setModalTab] = useState<'Dados' | 'Cobranca' | 'Decisores' | 'CRM' | 'Historico' | 'Acesso'>('Dados');
   const [searchTerm, setSearchTerm] = useState('');
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const menuRef = React.useRef<HTMLDivElement>(null);
+
+  const [createAccess, setCreateAccess] = useState(false);
+  const [userEmail, setUserEmail] = useState('');
+  const [userPassword, setUserPassword] = useState('');
 
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -94,18 +103,72 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segm
     setNewDecisor({ name: '', position: 'Logística', phone: '', email: '', influence: 50 });
   };
 
-  const handleSaveClient = () => {
-    if (selectedClientId) {
-      setClients(clients.map(c => c.id === selectedClientId ? { ...c, ...formData as Client } : c));
-    } else {
-      const newClient: Client = {
-        ...formData as Client,
-        id: Math.random().toString(36).substr(2, 5).toUpperCase(),
-      };
-      setClients([newClient, ...clients]);
+  const handleSaveClient = async () => {
+    try {
+      let clientToSave: Client;
+      if (selectedClientId) {
+        clientToSave = { ...formData as Client, id: selectedClientId };
+      } else {
+        clientToSave = {
+          ...formData as Client,
+          id: Math.random().toString(36).substr(2, 5).toUpperCase(),
+        };
+      }
+
+      // Save client to Firestore
+      await setDoc(doc(db, 'clients', clientToSave.id), clientToSave);
+
+      // Create user access if requested
+      if (createAccess && userEmail && userPassword) {
+        // Create in Firebase Auth using a secondary app instance
+        const secondaryApp = initializeApp(firebaseConfig, "Secondary");
+        const secondaryAuth = getAuth(secondaryApp);
+        try {
+          await createUserWithEmailAndPassword(secondaryAuth, userEmail, userPassword);
+        } catch (authError: any) {
+          // If user already exists, we just continue (maybe they were created before)
+          if (authError.code !== 'auth/email-already-in-use') {
+            throw authError;
+          }
+        } finally {
+          await deleteApp(secondaryApp);
+        }
+
+        const newUser: UserType = {
+          id: userEmail,
+          name: clientToSave.name,
+          email: userEmail,
+          password: userPassword,
+          role: 'Cliente',
+          status: 'Ativo',
+          ownerId: clientToSave.ownerId || 'GLOBAL',
+          customerId: clientToSave.id,
+          isFirstLogin: true
+        };
+        await setDoc(doc(db, 'users', userEmail), newUser);
+        alert(`Acesso criado com sucesso para ${userEmail}`);
+      }
+
+      setShowModal(false);
+      resetForm();
+    } catch (error: any) {
+      console.error("Error saving client:", error);
+      if (error.code === 'auth/operation-not-allowed') {
+        alert("O login com E-mail/Senha não está habilitado no Firebase Console. Por favor, habilite-o em Authentication > Sign-in method.");
+      } else {
+        alert("Erro ao salvar cliente.");
+      }
     }
-    setShowModal(false);
-    resetForm();
+  };
+
+  const handleDeleteClient = async (id: string) => {
+    if (window.confirm('Excluir cliente?')) {
+      try {
+        await deleteDoc(doc(db, 'clients', id));
+      } catch (error) {
+        console.error("Error deleting client:", error);
+      }
+    }
   };
 
   const resetForm = () => {
@@ -116,6 +179,9 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segm
       financeEmail: '', financeEmail2: '', financeContact: '', financePhone: '', financePhone2: ''
     });
     setModalTab('Dados');
+    setCreateAccess(false);
+    setUserEmail('');
+    setUserPassword('');
   };
 
   const getStatusBadge = (status: string) => {
@@ -226,7 +292,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segm
                         </button>
                         <div className="h-[1px] bg-gray-100 w-full"></div>
                         {currentUser.role === 'Administrador' && (
-                          <button onClick={() => { if(window.confirm('Excluir cliente?')) setClients(clients.filter(c => c.id !== client.id)); setOpenMenuId(null); }} className="w-full px-6 py-4 flex items-center gap-3 text-left hover:bg-red-50 transition-colors group">
+                          <button onClick={() => { handleDeleteClient(client.id); setOpenMenuId(null); }} className="w-full px-6 py-4 flex items-center gap-3 text-left hover:bg-red-50 transition-colors group">
                             <Trash2 size={16} className="text-red-400" /><span className="text-xs font-black uppercase text-red-600 tracking-widest">Excluir Cliente</span>
                           </button>
                         )}
@@ -259,7 +325,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segm
 
             {/* Tabs do Modal */}
             <div className="flex border-b border-gray-100 bg-gray-50/50 shrink-0 overflow-x-auto">
-              {(['Dados', 'Cobranca', 'Decisores', 'CRM', 'Historico'] as const).map(tab => (
+              {(['Dados', 'Cobranca', 'Decisores', 'CRM', 'Historico', 'Acesso'] as const).map(tab => (
                 <button 
                   key={tab}
                   onClick={() => setModalTab(tab)}
@@ -272,6 +338,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segm
                   {tab === 'Decisores' && <div className="flex items-center gap-2"><UserPlus size={16}/> Matriz de Decisores</div>}
                   {tab === 'CRM' && <div className="flex items-center gap-2"><Target size={16}/> Inteligência Comercial</div>}
                   {tab === 'Historico' && <div className="flex items-center gap-2"><FileText size={16}/> Histórico de Transportes</div>}
+                  {tab === 'Acesso' && <div className="flex items-center gap-2"><Lock size={16}/> Acesso do Cliente</div>}
                 </button>
               ))}
             </div>
@@ -718,6 +785,71 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segm
                         Salve o cliente primeiro para visualizar o histórico.
                       </div>
                     )}
+                  </div>
+                </div>
+              )}
+
+              {modalTab === 'Acesso' && (
+                <div className="max-w-md mx-auto space-y-6 animate-in slide-in-from-left-4">
+                  <div className="bg-white p-8 rounded-[2rem] border border-gray-100 shadow-sm space-y-6">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="p-3 bg-bordeaux/10 rounded-2xl text-bordeaux">
+                        <Lock size={24} />
+                      </div>
+                      <div>
+                        <h4 className="text-lg font-bold text-gray-800">Acesso ao Portal do Cliente</h4>
+                        <p className="text-xs text-gray-500 italic">Crie um login para que o cliente acompanhe suas cargas</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <label className="flex items-center gap-3 p-4 bg-gray-50 rounded-2xl cursor-pointer hover:bg-gray-100 transition-colors">
+                        <input 
+                          type="checkbox" 
+                          checked={createAccess}
+                          onChange={(e) => setCreateAccess(e.target.checked)}
+                          className="w-5 h-5 accent-bordeaux rounded"
+                        />
+                        <span className="text-sm font-bold text-gray-700">Criar/Atualizar Acesso do Cliente</span>
+                      </label>
+
+                      {createAccess && (
+                        <div className="space-y-4 animate-in slide-in-from-top-2">
+                          <div>
+                            <label className="text-[10px] font-black text-gray-500 uppercase block mb-1">E-mail de Login</label>
+                            <div className="relative">
+                              <Mail size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                              <input 
+                                type="email" 
+                                placeholder="cliente@email.com"
+                                value={userEmail}
+                                onChange={(e) => setUserEmail(e.target.value)}
+                                className="w-full pl-12 pr-4 py-4 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-bordeaux/20 font-bold"
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-black text-gray-500 uppercase block mb-1">Senha Provisória</label>
+                            <div className="relative">
+                              <Lock size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                              <input 
+                                type="text" 
+                                placeholder="Defina uma senha"
+                                value={userPassword}
+                                onChange={(e) => setUserPassword(e.target.value)}
+                                className="w-full pl-12 pr-4 py-4 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-bordeaux/20 font-bold"
+                              />
+                            </div>
+                          </div>
+                          <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 flex gap-3">
+                            <AlertTriangle className="text-amber-500 shrink-0" size={20} />
+                            <p className="text-[11px] text-amber-700 font-medium italic leading-relaxed">
+                              O cliente será solicitado a alterar esta senha no primeiro acesso.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
