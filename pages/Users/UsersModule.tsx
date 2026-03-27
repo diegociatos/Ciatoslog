@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Plus, Search, Edit2, Trash2, X, Shield, User, Building2 } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, X, Shield, User, Building2, UserX, Power } from 'lucide-react';
 import { User as UserType, Client } from '../../App';
 import { useCompany } from '../../App';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
@@ -19,6 +19,7 @@ const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers, clients }) =
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState<UserType | null>(null);
+  const [userToDelete, setUserToDelete] = useState<UserType | null>(null);
 
   const [formData, setFormData] = useState<Partial<UserType>>({
     name: '',
@@ -170,6 +171,21 @@ const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers, clients }) =
     }
   };
 
+  const handleDeleteUser = async (user: UserType) => {
+    try {
+      console.log("Deleting user from Firestore:", user.email);
+      await deleteDoc(doc(db, 'users', user.email));
+      console.log("User deleted from Firestore successfully.");
+      
+      // Update local state
+      setUsers(prev => prev.filter(u => u.id !== user.id));
+      setUserToDelete(null);
+    } catch (error: any) {
+      console.error("Error deleting user:", error);
+      alert("Erro ao excluir usuário: " + (error.message || "Erro desconhecido"));
+    }
+  };
+
   const getRoleBadge = (role: string) => {
     switch (role) {
       case 'Administrador': return <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center gap-1"><Shield size={10} /> Admin</span>;
@@ -276,12 +292,19 @@ const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers, clients }) =
                         onClick={() => toggleStatus(user)}
                         className={`p-2 rounded-lg transition-colors ${
                           user.status === 'Ativo' 
-                            ? 'text-gray-400 hover:text-red-600 hover:bg-red-50' 
+                            ? 'text-gray-400 hover:text-orange-600 hover:bg-orange-50' 
                             : 'text-gray-400 hover:text-emerald-600 hover:bg-emerald-50'
                         }`}
                         title={user.status === 'Ativo' ? 'Desativar' : 'Ativar'}
                       >
-                        {user.status === 'Ativo' ? <Trash2 size={18} /> : <User size={18} />}
+                        {user.status === 'Ativo' ? <Power size={18} /> : <Power size={18} className="rotate-180" />}
+                      </button>
+                      <button 
+                        onClick={() => setUserToDelete(user)}
+                        className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Excluir"
+                      >
+                        <Trash2 size={18} />
                       </button>
                     </div>
                   </td>
@@ -298,6 +321,37 @@ const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers, clients }) =
           </table>
         </div>
       </div>
+
+      {/* Modal Confirmação de Exclusão */}
+      {userToDelete && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60]">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <div className="flex flex-col items-center text-center">
+              <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mb-4">
+                <Trash2 size={32} />
+              </div>
+              <h3 className="text-xl font-black text-gray-900 mb-2">Excluir Usuário?</h3>
+              <p className="text-gray-500 mb-6">
+                Tem certeza que deseja excluir permanentemente o usuário <span className="font-bold text-gray-900">{userToDelete.name}</span>? Esta ação não pode ser desfeita.
+              </p>
+              <div className="flex gap-3 w-full">
+                <button 
+                  onClick={() => setUserToDelete(null)}
+                  className="flex-1 px-4 py-2 border border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-50 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={() => handleDeleteUser(userToDelete)}
+                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-colors shadow-lg shadow-red-200"
+                >
+                  Excluir
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal Novo/Editar Usuário */}
       {showModal && (

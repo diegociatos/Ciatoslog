@@ -543,13 +543,14 @@ const App: React.FC = () => {
             } else {
               console.warn("Unauthorized user attempted login:", email);
               await signOut(auth);
-              alert('Usuário não autorizado. Contate o administrador.');
+              alert(`Usuário não autorizado (${email}). O administrador deve cadastrar seu e-mail no sistema.`);
               setIsAuthenticated(false);
               setCurrentUser(null);
             }
           }
-        } catch (error) {
+        } catch (error: any) {
           console.error("Error fetching user data:", error);
+          alert("Erro ao carregar dados do usuário: " + error.message);
           setIsAuthenticated(false);
           setCurrentUser(null);
         }
