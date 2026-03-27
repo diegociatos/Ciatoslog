@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Lock, Mail, ArrowRight, AlertCircle } from 'lucide-react';
+import { Lock, Mail, ArrowRight } from 'lucide-react';
 import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { auth } from '../../firebase';
 
@@ -11,12 +11,10 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    setError('');
     try {
       await onLogin(email, password);
     } catch (error) {
@@ -28,23 +26,13 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
   const handleGoogleLogin = async () => {
     setIsLoading(true);
-    setError('');
     try {
       const provider = new GoogleAuthProvider();
       const result = await signInWithPopup(auth, provider);
       onLogin(result.user.email || undefined, undefined, result.user.uid);
-    } catch (err: any) {
-      console.error("Erro ao fazer login com Google", err);
-      const code = err?.code || '';
-      if (code === 'auth/unauthorized-domain') {
-        setError('Dom\u00ednio n\u00e3o autorizado no Firebase. O administrador precisa adicionar este dom\u00ednio nas configura\u00e7\u00f5es do Firebase Authentication.');
-      } else if (code === 'auth/popup-closed-by-user') {
-        setError('Login cancelado.');
-      } else if (code === 'auth/popup-blocked') {
-        setError('Pop-up bloqueado pelo navegador. Permita pop-ups para este site.');
-      } else {
-        setError('Erro ao fazer login com Google. Tente novamente.');
-      }
+    } catch (error) {
+      console.error("Erro ao fazer login com Google", error);
+      alert("Erro ao fazer login com Google. Verifique o console.");
     } finally {
       setIsLoading(false);
     }
@@ -79,13 +67,6 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             <h2 className="text-2xl font-bold text-gray-900">Bem-vindo de volta</h2>
             <p className="text-sm text-gray-500 mt-2">Acesse o painel de gestão logística</p>
           </div>
-
-          {error && (
-            <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm mb-4">
-              <AlertCircle size={18} className="flex-shrink-0" />
-              {error}
-            </div>
-          )}
 
           <form className="space-y-6" onSubmit={handleSubmit}>
             <div>

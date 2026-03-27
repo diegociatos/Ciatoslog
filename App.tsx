@@ -527,7 +527,7 @@ const App: React.FC = () => {
             setIsAuthenticated(true);
           } else {
             console.log("User NOT found in Firestore:", email);
-            if (email === 'diegociatos@gmail.com' || email === 'diego.garcia@grupociatos.com.br') {
+            if (email === 'diegociatos@gmail.com') {
               console.log("Creating default admin user in Firestore...");
               const newUser: User = {
                 id: email,
