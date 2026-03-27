@@ -346,7 +346,8 @@ const App: React.FC = () => {
           } else {
             // First time login or user not in DB yet. 
             // If it's the admin, create the user.
-            if (firebaseUser.email === 'diegociatos@gmail.com') {
+            const adminEmails = ['diegociatos@gmail.com', 'diego.garcia@grupociatos.com.br'];
+            if (adminEmails.includes(firebaseUser.email)) {
               const newUser: User = {
                 id: firebaseUser.email,
                 name: firebaseUser.displayName || 'Admin',
