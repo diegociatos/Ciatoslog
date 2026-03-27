@@ -25,9 +25,10 @@ import {
   FileText,
   Edit2,
   Lock,
-  Unlock
+  Unlock,
+  Loader2
 } from 'lucide-react';
-import { Client, Load, User as UserType } from '../../App';
+import { Client, Load, User as UserType, CompanyId } from '../../App';
 import { doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { initializeApp, deleteApp } from 'firebase/app';
@@ -35,14 +36,18 @@ import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 interface ClientsModuleProps {
+  activeCompany: CompanyId;
   clients: Client[];
   setClients: React.Dispatch<React.SetStateAction<Client[]>>;
   segments: string[];
+  clientTypes: string[];
   loads: Load[];
   currentUser: UserType;
+  users: UserType[];
+  setUsers: React.Dispatch<React.SetStateAction<UserType[]>>;
 }
 
-const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segments, loads, currentUser }) => {
+const ClientsModule: React.FC<ClientsModuleProps> = ({ activeCompany, clients, setClients, segments, clientTypes, loads, currentUser, users, setUsers }) => {
   const [showModal, setShowModal] = useState(false);
   const [modalTab, setModalTab] = useState<'Dados' | 'Cobranca' | 'Decisores' | 'CRM' | 'Historico' | 'Acesso'>('Dados');
   const [searchTerm, setSearchTerm] = useState('');
@@ -53,6 +58,38 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segm
   const [createAccess, setCreateAccess] = useState(false);
   const [userEmail, setUserEmail] = useState('');
   const [userPassword, setUserPassword] = useState('');
+  const [newUserName, setNewUserName] = useState('');
+  const [isFetchingCnpj, setIsFetchingCnpj] = useState(false);
+
+  const handleFetchCnpj = async () => {
+    const cnpj = formData.cnpj?.replace(/\D/g, '');
+    if (!cnpj || cnpj.length !== 14) {
+      alert("Por favor, insira um CNPJ válido (14 dígitos).");
+      return;
+    }
+
+    setIsFetchingCnpj(true);
+    try {
+      const response = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cnpj}`);
+      if (!response.ok) throw new Error("CNPJ não encontrado ou erro na API.");
+      
+      const data = await response.json();
+      
+      setFormData(prev => ({
+        ...prev,
+        name: data.razao_social || data.nome_fantasia || prev.name,
+        city: data.municipio || prev.city,
+        state: data.uf || prev.state,
+        taxRegime: data.opcao_pelo_simples ? 'Simples Nacional' : prev.taxRegime
+      }));
+      
+    } catch (error) {
+      console.error("Erro ao buscar CNPJ:", error);
+      alert("Não foi possível buscar os dados do CNPJ. Verifique se o número está correto.");
+    } finally {
+      setIsFetchingCnpj(false);
+    }
+  };
 
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -112,51 +149,78 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segm
         clientToSave = {
           ...formData as Client,
           id: Math.random().toString(36).substr(2, 5).toUpperCase(),
+          ownerId: activeCompany === 'GLOBAL' ? 'LOG' : activeCompany
         };
       }
 
       // Save client to Firestore
       await setDoc(doc(db, 'clients', clientToSave.id), clientToSave);
 
-      // Create user access if requested
-      if (createAccess && userEmail && userPassword) {
-        // Create in Firebase Auth using a secondary app instance
-        const secondaryApp = initializeApp(firebaseConfig, "Secondary");
-        const secondaryAuth = getAuth(secondaryApp);
-        try {
-          await createUserWithEmailAndPassword(secondaryAuth, userEmail, userPassword);
-        } catch (authError: any) {
-          // If user already exists, we just continue (maybe they were created before)
-          if (authError.code !== 'auth/email-already-in-use') {
-            throw authError;
-          }
-        } finally {
-          await deleteApp(secondaryApp);
-        }
-
-        const newUser: UserType = {
-          id: userEmail,
-          name: clientToSave.name,
-          email: userEmail,
-          password: userPassword,
-          role: 'Cliente',
-          status: 'Ativo',
-          ownerId: clientToSave.ownerId || 'GLOBAL',
-          customerId: clientToSave.id,
-          isFirstLogin: true
-        };
-        await setDoc(doc(db, 'users', userEmail), newUser);
-        alert(`Acesso criado com sucesso para ${userEmail}`);
-      }
-
       setShowModal(false);
       resetForm();
     } catch (error: any) {
       console.error("Error saving client:", error);
+      alert("Erro ao salvar cliente.");
+    }
+  };
+
+  const handleCreateUser = async () => {
+    if (!userEmail || !userPassword || !newUserName || !selectedClientId) {
+      alert("Preencha todos os campos para criar o acesso.");
+      return;
+    }
+
+    try {
+      // Create in Firebase Auth using a secondary app instance
+      const secondaryApp = initializeApp(firebaseConfig, `Secondary-${Date.now()}`);
+      const secondaryAuth = getAuth(secondaryApp);
+      try {
+        await createUserWithEmailAndPassword(secondaryAuth, userEmail, userPassword);
+      } catch (authError: any) {
+        if (authError.code !== 'auth/email-already-in-use') {
+          throw authError;
+        }
+      } finally {
+        await deleteApp(secondaryApp);
+      }
+
+      const newUser: UserType = {
+        id: userEmail,
+        name: newUserName,
+        email: userEmail,
+        password: userPassword,
+        role: 'Cliente',
+        status: 'Ativo',
+        ownerId: currentUser.id || 'GLOBAL',
+        customerId: selectedClientId,
+        isFirstLogin: true
+      };
+      await setDoc(doc(db, 'users', userEmail), newUser);
+      
+      // Update local state
+      setUsers(prev => [...prev, newUser]);
+      
+      setUserEmail('');
+      setUserPassword('');
+      setNewUserName('');
+      alert(`Acesso criado com sucesso para ${userEmail}`);
+    } catch (error: any) {
+      console.error("Error creating user:", error);
       if (error.code === 'auth/operation-not-allowed') {
-        alert("O login com E-mail/Senha não está habilitado no Firebase Console. Por favor, habilite-o em Authentication > Sign-in method.");
+        alert("O login com E-mail/Senha não está habilitado no Firebase Console.");
       } else {
-        alert("Erro ao salvar cliente.");
+        alert("Erro ao criar acesso.");
+      }
+    }
+  };
+
+  const handleDeleteUser = async (email: string) => {
+    if (window.confirm(`Excluir acesso do usuário ${email}?`)) {
+      try {
+        await deleteDoc(doc(db, 'users', email));
+        setUsers(prev => prev.filter(u => u.email !== email));
+      } catch (error) {
+        console.error("Error deleting user:", error);
       }
     }
   };
@@ -360,8 +424,14 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segm
                             disabled={!!selectedClientId}
                             className={`flex-1 px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-bordeaux/20 font-bold ${selectedClientId ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : ''}`}
                           />
-                          <button type="button" disabled={!!selectedClientId} className={`px-3 bg-gray-100 text-gray-500 rounded-xl transition-colors ${selectedClientId ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-200'}`}>
-                            <Globe size={18} />
+                          <button 
+                            type="button" 
+                            onClick={handleFetchCnpj}
+                            disabled={!!selectedClientId || isFetchingCnpj} 
+                            className={`px-3 bg-gray-100 text-gray-500 rounded-xl transition-colors ${selectedClientId || isFetchingCnpj ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-200'}`}
+                            title="Buscar dados na Receita Federal"
+                          >
+                            {isFetchingCnpj ? <Loader2 size={18} className="animate-spin" /> : <Globe size={18} />}
                           </button>
                         </div>
                       </div>
@@ -428,10 +498,8 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segm
                           disabled={!!selectedClientId}
                           className={`w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-bordeaux/20 font-bold ${selectedClientId ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : ''}`}
                         >
-                          <option>Indústria</option>
-                          <option>Embarcador</option>
-                          <option>Transportador</option>
-                          <option>Logística</option>
+                          <option value="">Selecione...</option>
+                          {clientTypes.map(type => <option key={type} value={type}>{type}</option>)}
                         </select>
                       </div>
                       <div>
@@ -790,64 +858,94 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ clients, setClients, segm
               )}
 
               {modalTab === 'Acesso' && (
-                <div className="max-w-md mx-auto space-y-6 animate-in slide-in-from-left-4">
-                  <div className="bg-white p-8 rounded-[2rem] border border-gray-100 shadow-sm space-y-6">
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className="p-3 bg-bordeaux/10 rounded-2xl text-bordeaux">
-                        <Lock size={24} />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in slide-in-from-left-4">
+                  <div className="space-y-6">
+                    <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-6">
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="p-3 bg-bordeaux/10 rounded-2xl text-bordeaux">
+                          <Lock size={24} />
+                        </div>
+                        <div>
+                          <h4 className="text-lg font-bold text-gray-800">Novo Acesso</h4>
+                          <p className="text-xs text-gray-500 italic">Crie um login para que o cliente acompanhe suas cargas</p>
+                        </div>
                       </div>
-                      <div>
-                        <h4 className="text-lg font-bold text-gray-800">Acesso ao Portal do Cliente</h4>
-                        <p className="text-xs text-gray-500 italic">Crie um login para que o cliente acompanhe suas cargas</p>
-                      </div>
-                    </div>
 
-                    <div className="space-y-4">
-                      <label className="flex items-center gap-3 p-4 bg-gray-50 rounded-2xl cursor-pointer hover:bg-gray-100 transition-colors">
-                        <input 
-                          type="checkbox" 
-                          checked={createAccess}
-                          onChange={(e) => setCreateAccess(e.target.checked)}
-                          className="w-5 h-5 accent-bordeaux rounded"
-                        />
-                        <span className="text-sm font-bold text-gray-700">Criar/Atualizar Acesso do Cliente</span>
-                      </label>
-
-                      {createAccess && (
-                        <div className="space-y-4 animate-in slide-in-from-top-2">
-                          <div>
-                            <label className="text-[10px] font-black text-gray-500 uppercase block mb-1">E-mail de Login</label>
-                            <div className="relative">
-                              <Mail size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-                              <input 
-                                type="email" 
-                                placeholder="cliente@email.com"
-                                value={userEmail}
-                                onChange={(e) => setUserEmail(e.target.value)}
-                                className="w-full pl-12 pr-4 py-4 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-bordeaux/20 font-bold"
-                              />
-                            </div>
-                          </div>
-                          <div>
-                            <label className="text-[10px] font-black text-gray-500 uppercase block mb-1">Senha Provisória</label>
-                            <div className="relative">
-                              <Lock size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-                              <input 
-                                type="text" 
-                                placeholder="Defina uma senha"
-                                value={userPassword}
-                                onChange={(e) => setUserPassword(e.target.value)}
-                                className="w-full pl-12 pr-4 py-4 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-bordeaux/20 font-bold"
-                              />
-                            </div>
-                          </div>
-                          <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 flex gap-3">
-                            <AlertTriangle className="text-amber-500 shrink-0" size={20} />
-                            <p className="text-[11px] text-amber-700 font-medium italic leading-relaxed">
-                              O cliente será solicitado a alterar esta senha no primeiro acesso.
-                            </p>
+                      <div className="space-y-4">
+                        <div>
+                          <label className="text-[10px] font-black text-gray-500 uppercase block mb-1">Nome do Usuário</label>
+                          <input 
+                            type="text" 
+                            placeholder="Nome completo"
+                            value={newUserName}
+                            onChange={(e) => setNewUserName(e.target.value)}
+                            className="w-full px-4 py-3 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-bordeaux/20 font-bold"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-black text-gray-500 uppercase block mb-1">E-mail de Login</label>
+                          <div className="relative">
+                            <Mail size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                            <input 
+                              type="email" 
+                              placeholder="cliente@email.com"
+                              value={userEmail}
+                              onChange={(e) => setUserEmail(e.target.value)}
+                              className="w-full pl-12 pr-4 py-3 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-bordeaux/20 font-bold"
+                            />
                           </div>
                         </div>
+                        <div>
+                          <label className="text-[10px] font-black text-gray-500 uppercase block mb-1">Senha Provisória</label>
+                          <div className="relative">
+                            <Lock size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                            <input 
+                              type="text" 
+                              placeholder="Defina uma senha"
+                              value={userPassword}
+                              onChange={(e) => setUserPassword(e.target.value)}
+                              className="w-full pl-12 pr-4 py-3 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-bordeaux/20 font-bold"
+                            />
+                          </div>
+                        </div>
+                        <button 
+                          onClick={handleCreateUser}
+                          disabled={!selectedClientId}
+                          className="w-full py-3 bg-bordeaux text-white rounded-2xl font-bold shadow-lg hover:opacity-90 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                        >
+                          <Plus size={18} /> Criar Acesso
+                        </button>
+                        {!selectedClientId && (
+                          <p className="text-[10px] text-red-500 font-bold text-center">Salve o cliente primeiro para criar acessos.</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-6">
+                    <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest border-b pb-1">Usuários com Acesso</h4>
+                    <div className="space-y-3">
+                      {users.filter(u => u.customerId === selectedClientId).map(user => (
+                        <div key={user.id} className="p-4 bg-gray-50 rounded-2xl border border-gray-100 flex items-center justify-between group">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center font-bold text-bordeaux border border-gray-100">
+                              {user.name.charAt(0)}
+                            </div>
+                            <div>
+                              <p className="text-sm font-bold text-gray-800">{user.name}</p>
+                              <p className="text-[10px] text-gray-400">{user.email}</p>
+                            </div>
+                          </div>
+                          <button 
+                            onClick={() => handleDeleteUser(user.email)}
+                            className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      ))}
+                      {users.filter(u => u.customerId === selectedClientId).length === 0 && (
+                        <p className="text-center py-8 text-gray-400 italic text-sm">Nenhum usuário cadastrado para este cliente.</p>
                       )}
                     </div>
                   </div>

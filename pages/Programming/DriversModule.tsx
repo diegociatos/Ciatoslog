@@ -6,16 +6,17 @@ import {
   Phone, Mail, ShieldCheck, Calendar, Wallet, Users, Edit2, Lock, 
   Unlock, Trash2, ChevronRight, Globe, TrendingUp, Sparkles, MapPinned, FileUp
 } from 'lucide-react';
-import { Driver, VehicleType, RouteEntry, User } from '../../App';
+import { Driver, VehicleType, RouteEntry, User, CompanyId } from '../../App';
 
 interface DriversModuleProps {
+  activeCompany: CompanyId;
   drivers: Driver[];
   setDrivers: React.Dispatch<React.SetStateAction<Driver[]>>;
   vehicleTypes: VehicleType[];
   currentUser: User;
 }
 
-const DriversModule: React.FC<DriversModuleProps> = ({ drivers, setDrivers, vehicleTypes, currentUser }) => {
+const DriversModule: React.FC<DriversModuleProps> = ({ activeCompany, drivers, setDrivers, vehicleTypes, currentUser }) => {
   const [showModal, setShowModal] = useState(false);
   const [showRouteModal, setShowRouteModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -63,6 +64,7 @@ const DriversModule: React.FC<DriversModuleProps> = ({ drivers, setDrivers, vehi
       const newDriver: Driver = {
         ...formData as Driver,
         id: `D${Math.random().toString(36).substr(2, 4).toUpperCase()}`,
+        ownerId: activeCompany === 'GLOBAL' ? 'LOG' : activeCompany
       };
       setDrivers([...drivers, newDriver]);
     }

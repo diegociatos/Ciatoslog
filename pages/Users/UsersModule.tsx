@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Search, Edit2, Trash2, X, Shield, User, Building2, UserX, Power } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, X, Shield, User, Building2, UserX, Power, Camera } from 'lucide-react';
 import { User as UserType, Client } from '../../App';
 import { useCompany } from '../../App';
 import { doc, setDoc, getDoc, deleteDoc } from 'firebase/firestore';
@@ -27,7 +27,8 @@ const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers, clients }) =
     password: '',
     role: 'Operacional',
     status: 'Ativo',
-    ownerId: 'GLOBAL'
+    ownerId: 'GLOBAL',
+    photoURL: ''
   });
 
   // Filter users based on active company context and search term
@@ -50,7 +51,8 @@ const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers, clients }) =
         password: '',
         role: 'Operacional',
         status: 'Ativo',
-        ownerId: activeCompany === 'GLOBAL' ? 'GLOBAL' : activeCompany
+        ownerId: activeCompany === 'GLOBAL' ? 'GLOBAL' : activeCompany,
+        photoURL: ''
       });
     }
     setShowModal(true);
@@ -68,9 +70,7 @@ const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers, clients }) =
         console.log("Updating existing user in Firestore:", updatedUser);
         await setDoc(doc(db, 'users', updatedUser.email), updatedUser);
         console.log("User updated in Firestore successfully.");
-        
-        // Update local state
-        setUsers(prev => prev.map(u => u.id === editingUser.id ? updatedUser : u));
+        // Note: setUsers is handled by onSnapshot in App.tsx
       } else {
         if (!formData.email || !formData.password) {
           alert("E-mail e senha são obrigatórios para novos usuários.");
@@ -105,13 +105,13 @@ const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers, clients }) =
           await createUserWithEmailAndPassword(secondaryAuth, email, formData.password || '');
           console.log("User created in secondary auth successfully.");
         } catch (authError: any) {
-          console.error("Auth creation error:", authError);
           // If user already exists in Auth, we just continue to create Firestore record
-          if (authError.code !== 'auth/email-already-in-use') {
+          if (authError.code === 'auth/email-already-in-use') {
+            console.log("User already exists in Auth (handled), proceeding to create Firestore record.");
+          } else {
+            console.error("Auth creation error:", authError);
             alert("Erro ao criar usuário no sistema de autenticação: " + authError.message);
             throw authError;
-          } else {
-            console.log("User already exists in Auth, proceeding to create Firestore record.");
           }
         } finally {
           if (secondaryApp) {
@@ -133,9 +133,7 @@ const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers, clients }) =
         console.log("Saving new user to Firestore:", newUser);
         await setDoc(doc(db, 'users', newUser.email), newUser);
         console.log("User saved to Firestore successfully.");
-        
-        // Update local state
-        setUsers(prev => [...prev, newUser]);
+        // Note: setUsers is handled by onSnapshot in App.tsx
       }
       setShowModal(false);
     } catch (error: any) {
@@ -162,9 +160,7 @@ const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers, clients }) =
       console.log("Toggling user status in Firestore:", updatedUser.email, "to", updatedStatus);
       await setDoc(doc(db, 'users', user.email), updatedUser);
       console.log("User status updated in Firestore successfully.");
-      
-      // Update local state
-      setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
+      // Note: setUsers is handled by onSnapshot in App.tsx
     } catch (error: any) {
       console.error("Error toggling user status:", error);
       alert("Erro ao alterar status do usuário: " + (error.message || "Erro desconhecido"));
@@ -176,9 +172,7 @@ const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers, clients }) =
       console.log("Deleting user from Firestore:", user.email);
       await deleteDoc(doc(db, 'users', user.email));
       console.log("User deleted from Firestore successfully.");
-      
-      // Update local state
-      setUsers(prev => prev.filter(u => u.id !== user.id));
+      // Note: setUsers is handled by onSnapshot in App.tsx
       setUserToDelete(null);
     } catch (error: any) {
       console.error("Error deleting user:", error);
@@ -250,8 +244,12 @@ const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers, clients }) =
                 <tr key={user.id} className="hover:bg-gray-50/50 transition-colors group">
                   <td className="p-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 font-bold">
-                        {user.name.charAt(0).toUpperCase()}
+                      <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 font-bold overflow-hidden border border-gray-200">
+                        {user.photoURL ? (
+                          <img src={user.photoURL} alt={user.name} className="w-full h-full object-cover" />
+                        ) : (
+                          user.name.charAt(0).toUpperCase()
+                        )}
                       </div>
                       <div>
                         <div className="font-bold text-gray-900">{user.name}</div>
@@ -388,6 +386,52 @@ const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers, clients }) =
                   onChange={e => setFormData({...formData, email: e.target.value})} 
                   required
                   placeholder="joao@empresa.com.br"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Foto do Usuário</label>
+                <div className="flex items-center gap-4">
+                  <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 font-bold overflow-hidden border-2 border-dashed border-gray-200">
+                    {formData.photoURL ? (
+                      <img src={formData.photoURL} alt="Preview" className="w-full h-full object-cover" />
+                    ) : (
+                      <Camera size={24} className="text-gray-300" />
+                    )}
+                  </div>
+                  <div className="flex-1 space-y-2">
+                    <input 
+                      type="file" 
+                      accept="image/png, image/jpeg, image/jpg"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          if (file.size > 500000) { // 500KB limit
+                            alert("A imagem é muito grande. Por favor, escolha uma imagem menor que 500KB.");
+                            return;
+                          }
+                          const reader = new FileReader();
+                          reader.onloadend = () => {
+                            setFormData({...formData, photoURL: reader.result as string});
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                      className="block w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-bordeaux/10 file:text-bordeaux hover:file:bg-bordeaux/20 cursor-pointer"
+                    />
+                    <p className="text-[10px] text-gray-400 italic">Formatos aceitos: PNG, JPG. Máximo 500KB.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Ou URL da Foto</label>
+                <input 
+                  type="text" 
+                  className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-bordeaux focus:border-transparent outline-none transition-all"
+                  value={formData.photoURL} 
+                  onChange={e => setFormData({...formData, photoURL: e.target.value})} 
+                  placeholder="https://exemplo.com/foto.jpg"
                 />
               </div>
 

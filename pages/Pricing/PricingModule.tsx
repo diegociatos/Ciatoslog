@@ -1,22 +1,25 @@
 import React, { useState, useEffect } from 'react';
-import { PricingConfig } from '../../App';
-import { Save, Building2, Percent, DollarSign, TrendingUp, Briefcase } from 'lucide-react';
+import { PricingConfig, User } from '../../App';
+import { Save, Building2, Percent, DollarSign, TrendingUp, Briefcase, ShieldAlert } from 'lucide-react';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 
 interface PricingModuleProps {
   pricingConfigs: PricingConfig[];
   setPricingConfigs: React.Dispatch<React.SetStateAction<PricingConfig[]>>;
+  currentUser: User;
 }
 
-const PricingModule: React.FC<PricingModuleProps> = ({ pricingConfigs, setPricingConfigs }) => {
+const PricingModule: React.FC<PricingModuleProps> = ({ pricingConfigs, setPricingConfigs, currentUser }) => {
   const [configs, setConfigs] = useState<PricingConfig[]>(pricingConfigs);
+  const isAdmin = currentUser.role === 'Administrador';
 
   useEffect(() => {
     setConfigs(pricingConfigs);
   }, [pricingConfigs]);
 
   const handleSave = async () => {
+    if (!isAdmin) return;
     try {
       for (const config of configs) {
         await setDoc(doc(db, 'pricingConfigs', config.id), config);
@@ -29,6 +32,7 @@ const PricingModule: React.FC<PricingModuleProps> = ({ pricingConfigs, setPricin
   };
 
   const updateConfig = (id: string, field: keyof PricingConfig, value: number) => {
+    if (!isAdmin) return;
     setConfigs(configs.map(c => c.id === id ? { ...c, [field]: value } : c));
   };
 
@@ -37,16 +41,29 @@ const PricingModule: React.FC<PricingModuleProps> = ({ pricingConfigs, setPricin
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold text-gray-800">Precificação</h2>
-          <p className="text-gray-500 italic">Configure as variantes de precificação para garantir a margem líquida.</p>
+          <p className="text-gray-500 italic">
+            {isAdmin 
+              ? "Configure as variantes de precificação para garantir a margem líquida."
+              : "Visualize as variantes de precificação configuradas pelo administrador."}
+          </p>
         </div>
-        <button 
-          onClick={handleSave}
-          className="bg-bordeaux text-white px-6 py-3 rounded-xl font-bold shadow-lg hover:opacity-90 transition-all flex items-center gap-2"
-        >
-          <Save size={20} />
-          Salvar Configurações
-        </button>
+        {isAdmin && (
+          <button 
+            onClick={handleSave}
+            className="bg-bordeaux text-white px-6 py-3 rounded-xl font-bold shadow-lg hover:opacity-90 transition-all flex items-center gap-2"
+          >
+            <Save size={20} />
+            Salvar Configurações
+          </button>
+        )}
       </div>
+
+      {!isAdmin && (
+        <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl flex items-center gap-3 text-amber-800">
+          <ShieldAlert size={20} />
+          <p className="text-sm font-medium">Você está em modo de visualização. Somente administradores podem alterar estes valores.</p>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {configs.map(config => (
@@ -80,8 +97,9 @@ const PricingModule: React.FC<PricingModuleProps> = ({ pricingConfigs, setPricin
                       type="number" 
                       value={config.federalTaxes}
                       onChange={(e) => updateConfig(config.id, 'federalTaxes', parseFloat(e.target.value) || 0)}
-                      className="w-24 px-4 py-2 border border-gray-200 rounded-xl font-black text-gray-800 text-right focus:ring-2 focus:ring-bordeaux/20"
+                      className={`w-24 px-4 py-2 border border-gray-200 rounded-xl font-black text-gray-800 text-right focus:ring-2 focus:ring-bordeaux/20 ${!isAdmin && 'bg-gray-100 cursor-not-allowed'}`}
                       step="0.01"
+                      disabled={!isAdmin}
                     />
                     <span className="text-gray-400 font-bold">%</span>
                   </div>
@@ -93,8 +111,8 @@ const PricingModule: React.FC<PricingModuleProps> = ({ pricingConfigs, setPricin
                       <Percent size={18} />
                     </div>
                     <div>
-                      <p className="text-xs font-black text-gray-400 uppercase tracking-wider">ICMS</p>
-                      <p className="text-sm font-bold text-gray-700">Percentual aplicado</p>
+                      <p className="text-xs font-black text-gray-400 uppercase tracking-wider">ICMS Base</p>
+                      <p className="text-[10px] text-gray-400 font-medium italic">Calculado automaticamente no Comercial</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -102,8 +120,9 @@ const PricingModule: React.FC<PricingModuleProps> = ({ pricingConfigs, setPricin
                       type="number" 
                       value={config.icms}
                       onChange={(e) => updateConfig(config.id, 'icms', parseFloat(e.target.value) || 0)}
-                      className="w-24 px-4 py-2 border border-gray-200 rounded-xl font-black text-gray-800 text-right focus:ring-2 focus:ring-bordeaux/20"
+                      className={`w-24 px-4 py-2 border border-gray-200 rounded-xl font-black text-gray-800 text-right focus:ring-2 focus:ring-bordeaux/20 ${!isAdmin && 'bg-gray-100 cursor-not-allowed'}`}
                       step="0.01"
+                      disabled={!isAdmin}
                     />
                     <span className="text-gray-400 font-bold">%</span>
                   </div>
@@ -124,8 +143,9 @@ const PricingModule: React.FC<PricingModuleProps> = ({ pricingConfigs, setPricin
                       type="number" 
                       value={config.directCost}
                       onChange={(e) => updateConfig(config.id, 'directCost', parseFloat(e.target.value) || 0)}
-                      className="w-24 px-4 py-2 border border-gray-200 rounded-xl font-black text-gray-800 text-right focus:ring-2 focus:ring-bordeaux/20"
+                      className={`w-24 px-4 py-2 border border-gray-200 rounded-xl font-black text-gray-800 text-right focus:ring-2 focus:ring-bordeaux/20 ${!isAdmin && 'bg-gray-100 cursor-not-allowed'}`}
                       step="0.01"
+                      disabled={!isAdmin}
                     />
                     <span className="text-gray-400 font-bold">%</span>
                   </div>
@@ -146,8 +166,9 @@ const PricingModule: React.FC<PricingModuleProps> = ({ pricingConfigs, setPricin
                       type="number" 
                       value={config.expenses}
                       onChange={(e) => updateConfig(config.id, 'expenses', parseFloat(e.target.value) || 0)}
-                      className="w-24 px-4 py-2 border border-gray-200 rounded-xl font-black text-gray-800 text-right focus:ring-2 focus:ring-bordeaux/20"
+                      className={`w-24 px-4 py-2 border border-gray-200 rounded-xl font-black text-gray-800 text-right focus:ring-2 focus:ring-bordeaux/20 ${!isAdmin && 'bg-gray-100 cursor-not-allowed'}`}
                       step="0.01"
+                      disabled={!isAdmin}
                     />
                     <span className="text-gray-400 font-bold">%</span>
                   </div>
@@ -168,8 +189,9 @@ const PricingModule: React.FC<PricingModuleProps> = ({ pricingConfigs, setPricin
                       type="number" 
                       value={config.minProfit}
                       onChange={(e) => updateConfig(config.id, 'minProfit', parseFloat(e.target.value) || 0)}
-                      className="w-24 px-4 py-2 border border-gray-200 rounded-xl font-black text-bordeaux text-right focus:ring-2 focus:ring-bordeaux/20 bg-white"
+                      className={`w-24 px-4 py-2 border border-gray-200 rounded-xl font-black text-bordeaux text-right focus:ring-2 focus:ring-bordeaux/20 bg-white ${!isAdmin && 'bg-gray-100 cursor-not-allowed'}`}
                       step="0.01"
+                      disabled={!isAdmin}
                     />
                     <span className="text-bordeaux font-bold">%</span>
                   </div>

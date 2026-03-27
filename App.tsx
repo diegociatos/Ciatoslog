@@ -45,7 +45,7 @@ import ClientDashboard from './pages/Clients/ClientDashboard';
 import Login from './pages/Login/Login';
 
 // --- CONTEXTO MULTI-EMPRESA ---
-type CompanyId = 'BD' | 'LOG' | 'GLOBAL';
+export type CompanyId = 'BD' | 'LOG' | 'GLOBAL';
 
 interface CompanyContextType {
   activeCompany: CompanyId;
@@ -397,6 +397,8 @@ const App: React.FC = () => {
   ]);
 
   const [pricingConfigs, setPricingConfigs] = useState<PricingConfig[]>([]);
+  const [clientTypes, setClientTypes] = useState<string[]>(['Indústria', 'Embarcador', 'Distribuidor']);
+  const [segments, setSegments] = useState<string[]>(['Agronegócio', 'Indústria', 'Químico e Petroquímico']);
   const [loads, setLoads] = useState<Load[]>([
     { 
       id: 'L1', ownerId: 'BD', date: '2026-03-10', customer: 'Vale S.A.', origin: 'Belo Horizonte/MG', 
@@ -489,9 +491,6 @@ const App: React.FC = () => {
     { id: '1', name: 'Itaú - Conta Principal', type: 'BANCO', initialBalance: 150000 },
     { id: '2', name: 'Caixa Interno', type: 'CAIXA', initialBalance: 5000 },
   ]);
-
-  const [routes, setRoutes] = useState<RouteConfig[]>([]);
-  const [segments, setSegments] = useState<string[]>(['Agronegócio', 'Indústria', 'Químico e Petroquímico']);
 
   const [dreCategories, setDreCategories] = useState<DRECategory[]>([
     { id: '1', name: 'Frete', group: 'RECEITA_BRUTA_CAIXA' },
@@ -758,8 +757,9 @@ const App: React.FC = () => {
           return isOperacional || isComercial || isCliente || isGestor;
         case Module.Financeiro:
         case Module.Usuarios:
-        case Module.Precificacao:
           return isFinanceiro || isGestor;
+        case Module.Precificacao:
+          return isFinanceiro || isGestor || isComercial;
         case Module.Configuracoes:
           return isGestor;
         default:
@@ -792,7 +792,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleUpdateProfile = async (data: { name: string; photoURL?: string; password?: string; isFirstLogin?: boolean }) => {
+  const handleUpdateProfile = async (data: { name?: string; photoURL?: string; password?: string; isFirstLogin?: boolean }) => {
     if (!currentUser || !auth.currentUser) return;
     try {
       if (data.password) {
@@ -865,11 +865,27 @@ const App: React.FC = () => {
         }
         return <DashboardModule unit={activeCompany} loads={filteredLoads} clients={filteredClients} drivers={filteredDrivers} transactions={filteredTransactions} users={users} dreCategories={dreCategories} ctes={ctes} currentUser={currentUser} commissionRules={commissionRules} />;
       case Module.Comercial:
-        return <CommercialModule loads={filteredLoads} addLoad={addLoad} updateLoad={updateLoad} deleteLoad={deleteLoad} clients={filteredClients} drivers={filteredDrivers} goToProgramming={() => setActiveModule(Module.Programacao)} />;
+        return <CommercialModule loads={filteredLoads} addLoad={addLoad} updateLoad={updateLoad} deleteLoad={deleteLoad} clients={filteredClients} drivers={filteredDrivers} goToProgramming={() => setActiveModule(Module.Programacao)} pricingConfigs={pricingConfigs} />;
       case Module.Clientes:
-        return <ClientsModule clients={filteredClients} setClients={setClients} segments={segments} loads={filteredLoads} currentUser={currentUser} />;
+        return <ClientsModule 
+          activeCompany={activeCompany}
+          clients={filteredClients} 
+          setClients={setClients} 
+          segments={segments} 
+          clientTypes={clientTypes}
+          loads={filteredLoads} 
+          currentUser={currentUser} 
+          users={users}
+          setUsers={setUsers}
+        />;
       case Module.Motoristas:
-        return <DriversModule drivers={filteredDrivers} setDrivers={setDrivers} vehicleTypes={vehicleTypes} currentUser={currentUser} />;
+        return <DriversModule 
+          activeCompany={activeCompany}
+          drivers={filteredDrivers} 
+          setDrivers={setDrivers} 
+          vehicleTypes={vehicleTypes} 
+          currentUser={currentUser} 
+        />;
       case Module.Programacao:
         return <ProgrammingModule loads={filteredLoads} updateLoad={updateLoad} drivers={filteredDrivers} addTransaction={addTransaction} currentUser={currentUser} />;
       case Module.Financeiro:
@@ -895,15 +911,11 @@ const App: React.FC = () => {
       case Module.Usuarios:
         return <UsersModule users={users} setUsers={setUsers} clients={clients} />;
       case Module.Precificacao:
-        return <PricingModule pricingConfigs={pricingConfigs} setPricingConfigs={setPricingConfigs} />;
+        return <PricingModule pricingConfigs={pricingConfigs} setPricingConfigs={setPricingConfigs} currentUser={currentUser} />;
       case Module.Configuracoes:
         return <SettingsModule 
           vehicleTypes={vehicleTypes} 
           setVehicleTypes={setVehicleTypes} 
-          routes={routes} 
-          setRoutes={setRoutes} 
-          segments={segments} 
-          setSegments={setSegments} 
           bankAccounts={bankAccounts}
           setBankAccounts={setBankAccounts}
           dreCategories={dreCategories}
@@ -913,6 +925,10 @@ const App: React.FC = () => {
           setCommercialGoals={setCommercialGoals}
           commissionRules={commissionRules}
           setCommissionRules={setCommissionRules}
+          segments={segments}
+          setSegments={setSegments}
+          clientTypes={clientTypes}
+          setClientTypes={setClientTypes}
         />;
       default:
         return <div className="p-10 text-center italic text-gray-400">Módulo em desenvolvimento...</div>;
@@ -1201,11 +1217,30 @@ const App: React.FC = () => {
                         <UserCircle size={64} className="text-bordeaux" />
                       )}
                     </div>
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-full cursor-pointer">
+                    <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-full cursor-pointer">
                       <Camera size={24} className="text-white" />
-                    </div>
+                      <input 
+                        type="file" 
+                        className="hidden" 
+                        accept="image/png, image/jpeg, image/jpg"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            if (file.size > 500000) { // 500KB limit
+                              alert("A imagem é muito grande. Por favor, escolha uma imagem menor que 500KB.");
+                              return;
+                            }
+                            const reader = new FileReader();
+                            reader.onloadend = () => {
+                              handleUpdateProfile({ photoURL: reader.result as string });
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                      />
+                    </label>
                   </div>
-                  <p className="text-xs text-gray-500 italic text-center">Insira a URL de uma imagem para sua foto de perfil</p>
+                  <p className="text-xs text-gray-500 italic text-center">Clique na foto para fazer upload ou insira a URL abaixo</p>
                 </div>
 
                 <div className="space-y-4">

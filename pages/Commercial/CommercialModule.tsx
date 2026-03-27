@@ -8,7 +8,7 @@ import {
   Copy, ArrowRightLeft, Sparkles, History, Navigation, Trophy, UserCheck,
   Building2
 } from 'lucide-react';
-import { Load, Client, LoadStatus, Driver, useCompany } from '../../App';
+import { Load, Client, LoadStatus, Driver, useCompany, PricingConfig } from '../../App';
 
 interface CommercialModuleProps {
   loads: Load[];
@@ -18,9 +18,10 @@ interface CommercialModuleProps {
   clients: Client[];
   drivers: Driver[];
   goToProgramming: () => void;
+  pricingConfigs: PricingConfig[];
 }
 
-type MainTab = 'Minhas Cargas' | 'Kanban' | 'Radar de Leads';
+type MainTab = 'Minhas Cargas' | 'Kanban';
 type FormTab = 'Cliente' | 'Endereços' | 'Carga' | 'Financeiro';
 
 interface ExtraExpense {
@@ -29,7 +30,30 @@ interface ExtraExpense {
   value: number;
 }
 
-const CommercialModule: React.FC<CommercialModuleProps> = ({ loads, addLoad, updateLoad, deleteLoad, clients, drivers, goToProgramming }) => {
+const SOUTH_SOUTHEAST_EXCEPT_ES = ['PR', 'SC', 'RS', 'SP', 'RJ', 'MG'];
+const NORTH_NORTHEAST_MIDWEST_ES = ['AC', 'AM', 'AP', 'PA', 'RO', 'RR', 'TO', 'AL', 'BA', 'CE', 'MA', 'PB', 'PE', 'PI', 'RN', 'SE', 'DF', 'GO', 'MT', 'MS', 'ES'];
+
+const calculateICMS = (origin: string, destination: string): number => {
+  if (!origin || !destination) return 12;
+  if (destination === 'CE') return 20;
+  
+  const isOriginGroup1 = SOUTH_SOUTHEAST_EXCEPT_ES.includes(origin);
+  const isDestGroup1 = SOUTH_SOUTHEAST_EXCEPT_ES.includes(destination);
+  const isOriginGroup2 = NORTH_NORTHEAST_MIDWEST_ES.includes(origin);
+
+  if (isOriginGroup1) {
+    if (isDestGroup1) return 12;
+    return 7; // Destino é Grupo 2 (Norte, Nordeste, Centro-Oeste e ES)
+  }
+  
+  if (isOriginGroup2) return 12;
+
+  return 12;
+};
+
+const CommercialModule: React.FC<CommercialModuleProps> = ({ 
+  loads, addLoad, updateLoad, deleteLoad, clients, drivers, goToProgramming, pricingConfigs 
+}) => {
   const { activeCompany, getCompanyBadge } = useCompany();
   const [activeTab, setActiveTab] = useState<MainTab>('Kanban');
   const [searchTerm, setSearchTerm] = useState('');
@@ -46,26 +70,6 @@ const CommercialModule: React.FC<CommercialModuleProps> = ({ loads, addLoad, upd
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [editingLoadId, setEditingLoadId] = useState<string | null>(null);
 
-  // Radar de Leads States
-  const [radarFilters, setRadarFilters] = useState({ segment: '', city: '', radius: '50' });
-  const [isSearchingLeads, setIsSearchingLeads] = useState(false);
-  const [radarResults, setRadarResults] = useState<any[]>([]);
-
-  const simulateSearchLeads = () => {
-    setIsSearchingLeads(true);
-    // Simulação de delay de IA
-    setTimeout(() => {
-      setRadarResults([
-        { id: 'L1', name: 'Indústria de Alimentos Sabor Real', cnpj: '12.345.678/0001-90', phone: '(11) 3344-5566', segment: 'Alimentos', city: 'São Paulo/SP' },
-        { id: 'L2', name: 'Logística Expressa TransGlobal', cnpj: '98.765.432/0001-10', phone: '(21) 2233-4455', segment: 'Logística', city: 'Rio de Janeiro/RJ' },
-        { id: 'L3', name: 'Distribuidora Fênix de Bebidas', cnpj: '45.678.901/0001-22', phone: '(31) 3322-1100', segment: 'Bebidas', city: 'Belo Horizonte/MG' },
-        { id: 'L4', name: 'Metalúrgica Aço Forte Ltda', cnpj: '11.222.333/0001-44', phone: '(41) 3344-9988', segment: 'Metalurgia', city: 'Curitiba/PR' },
-        { id: 'L5', name: 'Cooperativa Agrícola Grão de Ouro', cnpj: '55.444.333/0001-55', phone: '(65) 3366-7788', segment: 'Agronegócio', city: 'Cuiabá/MT' },
-      ]);
-      setIsSearchingLeads(false);
-    }, 1500);
-  };
-
   const [formData, setFormData] = useState({
     origin: { name: '', cnpj: '', street: '', number: '', neighborhood: '', city: '', state: '', zip: '', contact: '', phone: '' },
     destination: { name: '', cnpj: '', street: '', number: '', neighborhood: '', city: '', state: '', zip: '', contact: '', phone: '' },
@@ -76,6 +80,10 @@ const CommercialModule: React.FC<CommercialModuleProps> = ({ loads, addLoad, upd
     },
     programming: { choice: 'Setor' as 'Comercial' | 'Setor' | 'Especifico', assignedProgrammer: '' }
   });
+
+  const dynamicICMS = useMemo(() => {
+    return calculateICMS(formData.origin.state, formData.destination.state);
+  }, [formData.origin.state, formData.destination.state]);
 
   const columns: { id: LoadStatus; label: string; color: string }[] = [
     { id: 'NEGOCIACAO', label: 'PROPOSTA / NEGOCIAÇÃO', color: 'border-amber-400' },
@@ -116,6 +124,32 @@ const CommercialModule: React.FC<CommercialModuleProps> = ({ loads, addLoad, upd
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedClient) return;
+
+    // Calcular o preço mínimo sugerido antes de salvar
+    const despesasExtrasTotal = formData.finance.extraExpenses.reduce((acc, curr) => acc + curr.value, 0);
+    const companyToUse = activeCompany === 'GLOBAL' ? 'LOG' : activeCompany;
+    const config = pricingConfigs.find(c => c.ownerId === companyToUse);
+    
+    let minSellingPrice = 0;
+    if (config && formData.finance.driverFreight > 0) {
+      const totalPercentage = (config.federalTaxes || 0) + 
+                              (dynamicICMS || 0) + 
+                              (config.directCost || 0) + 
+                              (config.expenses || 0) + 
+                              (config.minProfit || 0);
+      
+      if (totalPercentage < 100) {
+        const costBase = formData.finance.driverFreight + despesasExtrasTotal;
+        minSellingPrice = costBase / (1 - totalPercentage / 100);
+      }
+    }
+
+    // Validar se o frete bruto é menor que o preço mínimo sugerido
+    if (minSellingPrice > 0 && formData.finance.freightBruto < minSellingPrice) {
+      alert(`O frete bruto (${formData.finance.freightBruto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}) não pode ser menor que o preço mínimo sugerido (${minSellingPrice.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}).`);
+      return;
+    }
+
     const selectedDriver = drivers.find(d => d.id === formData.finance.selectedDriverId);
     const existing = editingLoadId ? loads.find(l => l.id === editingLoadId) : null;
     let targetStatus: LoadStatus = existing ? existing.status : 'AGUARDANDO PROGRAMAÇÃO';
@@ -123,7 +157,7 @@ const CommercialModule: React.FC<CommercialModuleProps> = ({ loads, addLoad, upd
     const payload = {
       customer: selectedClient.name,
       value: formData.finance.freightBruto,
-      cost: formData.finance.driverFreight + 500, // Custo simbólico
+      cost: formData.finance.driverFreight + despesasExtrasTotal,
       origin: `${formData.origin.city}/${formData.origin.state}`,
       destination: `${formData.destination.city}/${formData.destination.state}`,
       vehicleTypeRequired: selectedDriver?.vehicleType || 'Truck',
@@ -163,7 +197,7 @@ const CommercialModule: React.FC<CommercialModuleProps> = ({ loads, addLoad, upd
 
       <div className="flex border-b border-gray-200 bg-white rounded-t-3xl shadow-sm px-6 justify-between items-center">
         <div className="flex">
-          {(['Minhas Cargas', 'Kanban', 'Radar de Leads'] as MainTab[]).map((tab) => (
+          {(['Minhas Cargas', 'Kanban'] as MainTab[]).map((tab) => (
             <button key={tab} onClick={() => setActiveTab(tab)} className={`px-8 py-5 font-black text-xs uppercase tracking-widest transition-all border-b-4 ${activeTab === tab ? 'border-bordeaux text-bordeaux bg-bordeaux/5' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
               {tab}
             </button>
@@ -316,121 +350,6 @@ const CommercialModule: React.FC<CommercialModuleProps> = ({ loads, addLoad, upd
                   )}
                 </tbody>
               </table>
-            </div>
-          </div>
-        ) : activeTab === 'Radar de Leads' ? (
-          <div className="space-y-8 animate-in fade-in duration-500">
-            {/* Filtros de Prospecção */}
-            <div className="bg-white p-8 rounded-[32px] border border-gray-100 shadow-sm space-y-6">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="bg-bordeaux/10 p-2 rounded-xl"><Sparkles size={20} className="text-bordeaux" /></div>
-                <h4 className="text-sm font-black text-gray-800 uppercase tracking-tight">Radar de Leads Inteligente (IA)</h4>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Segmento</label>
-                  <select 
-                    className="w-full px-5 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl font-black text-xs outline-none focus:ring-2 focus:ring-bordeaux/20"
-                    value={radarFilters.segment}
-                    onChange={(e) => setRadarFilters({...radarFilters, segment: e.target.value})}
-                  >
-                    <option value="">Todos os Segmentos</option>
-                    <option value="Alimentos">Alimentos</option>
-                    <option value="Agronegócio">Agronegócio</option>
-                    <option value="Indústria">Indústria</option>
-                    <option value="Logística">Logística</option>
-                    <option value="Varejo">Varejo</option>
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Cidade / UF</label>
-                  <input 
-                    placeholder="Ex: São Paulo/SP"
-                    className="w-full px-5 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl font-black text-xs outline-none focus:ring-2 focus:ring-bordeaux/20"
-                    value={radarFilters.city}
-                    onChange={(e) => setRadarFilters({...radarFilters, city: e.target.value})}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Raio de Atuação (km)</label>
-                  <select 
-                    className="w-full px-5 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl font-black text-xs outline-none focus:ring-2 focus:ring-bordeaux/20"
-                    value={radarFilters.radius}
-                    onChange={(e) => setRadarFilters({...radarFilters, radius: e.target.value})}
-                  >
-                    <option value="10">Até 10 km</option>
-                    <option value="50">Até 50 km</option>
-                    <option value="100">Até 100 km</option>
-                    <option value="500">Até 500 km</option>
-                  </select>
-                </div>
-                <div className="flex items-end">
-                  <button 
-                    onClick={simulateSearchLeads}
-                    disabled={isSearchingLeads}
-                    className="w-full bg-bordeaux text-white px-6 py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-bordeaux/20 hover:scale-[1.02] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-                  >
-                    {isSearchingLeads ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                        Processando...
-                      </>
-                    ) : (
-                      <>
-                        <Search size={16} /> Buscar Leads
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Resultados */}
-            <div className="grid grid-cols-1 gap-4">
-              {radarResults.length > 0 ? (
-                radarResults.map((lead) => (
-                  <div key={lead.id} className="bg-white p-6 rounded-[32px] border border-gray-100 shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row items-center justify-between gap-6 group">
-                    <div className="flex items-center gap-5 flex-1">
-                      <div className="bg-bordeaux/5 p-4 rounded-2xl group-hover:bg-bordeaux group-hover:text-white transition-all">
-                        <Building2 size={24} />
-                      </div>
-                      <div className="space-y-1">
-                        <h5 className="font-black text-gray-800 text-base leading-tight">{lead.name}</h5>
-                        <div className="flex flex-wrap gap-4">
-                          <span className="text-[10px] font-bold text-gray-400 uppercase flex items-center gap-1">
-                             <FileSearch size={12} className="text-bordeaux" /> {lead.cnpj}
-                          </span>
-                          <span className="text-[10px] font-bold text-gray-400 uppercase flex items-center gap-1">
-                             <Truck size={12} className="text-bordeaux" /> {lead.segment}
-                          </span>
-                          <span className="text-[10px] font-bold text-gray-400 uppercase flex items-center gap-1">
-                             <MapPin size={12} className="text-bordeaux" /> {lead.city}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center gap-6 w-full md:w-auto">
-                      <div className="text-right hidden md:block">
-                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Contato Direto</p>
-                        <p className="font-black text-gray-700 text-sm">{lead.phone}</p>
-                      </div>
-                      <button className="flex-1 md:flex-none bg-emerald-50 text-emerald-600 px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-600 hover:text-white transition-all flex items-center justify-center gap-2 border border-emerald-100">
-                        <Plus size={14} /> Importar para CRM
-                      </button>
-                    </div>
-                  </div>
-                ))
-              ) : !isSearchingLeads && (
-                <div className="flex flex-col items-center justify-center py-20 text-center space-y-4 opacity-30">
-                  <Sparkles size={64} className="text-bordeaux" />
-                  <div className="space-y-1">
-                    <p className="text-lg font-black text-bordeaux uppercase tracking-widest">Radar de Leads Inativo</p>
-                    <p className="text-xs font-bold text-gray-500 italic">Utilize os filtros acima para prospectar novos clientes com nossa IA.</p>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         ) : (
@@ -870,6 +789,13 @@ const CommercialModule: React.FC<CommercialModuleProps> = ({ loads, addLoad, upd
                                 onChange={(e) => setFormData({ ...formData, finance: { ...formData.finance, taxPercent: Number(e.target.value) } })}
                               />
                             </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">ICMS Automático (%)</label>
+                              <div className="w-full px-5 py-3.5 bg-gray-100 border border-gray-200 rounded-2xl font-black text-sm text-gray-500 flex items-center justify-between">
+                                <span>{dynamicICMS}%</span>
+                                <span className="text-[8px] font-bold opacity-50 italic">Regra Origem/Destino</span>
+                              </div>
+                            </div>
                           </div>
                         </div>
 
@@ -1038,6 +964,24 @@ const CommercialModule: React.FC<CommercialModuleProps> = ({ loads, addLoad, upd
                           const bonusIndex = formData.finance.freightBruto > 0 ? (custoTotal / formData.finance.freightBruto) * 100 : 0;
                           const margemLiquida = formData.finance.freightBruto - custoTotal;
 
+                          // Cálculo do preço mínimo sugerido baseado nas configurações de precificação
+                          const companyToUse = activeCompany === 'GLOBAL' ? 'LOG' : activeCompany;
+                          const config = pricingConfigs.find(c => c.ownerId === companyToUse);
+                          
+                          let minSellingPrice = 0;
+                          if (config && formData.finance.driverFreight > 0) {
+                            const totalPercentage = (config.federalTaxes || 0) + 
+                                                    (config.icms || 0) + 
+                                                    (config.directCost || 0) + 
+                                                    (config.expenses || 0) + 
+                                                    (config.minProfit || 0);
+                            
+                            if (totalPercentage < 100) {
+                              const costBase = formData.finance.driverFreight + despesasExtrasTotal;
+                              minSellingPrice = costBase / (1 - totalPercentage / 100);
+                            }
+                          }
+
                           return (
                             <div className="space-y-6">
                               <div className="space-y-3">
@@ -1063,6 +1007,17 @@ const CommercialModule: React.FC<CommercialModuleProps> = ({ loads, addLoad, upd
                                   <span>Despesas Extras</span>
                                   <span className="text-red-400">- {despesasExtrasTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                                 </div>
+                                {minSellingPrice > 0 && (
+                                  <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-2xl space-y-1">
+                                    <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Preço Mínimo Sugerido</p>
+                                    <p className="text-lg font-black text-emerald-700">
+                                      {minSellingPrice.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                    </p>
+                                    <p className="text-[8px] font-bold text-emerald-500 uppercase italic leading-tight">
+                                      Valor calculado para cobrir impostos, custos e margem mínima.
+                                    </p>
+                                  </div>
+                                )}
                                 <div className="pt-3 border-t border-dashed border-gray-200 flex justify-between items-center">
                                   <span className="text-xs font-black text-gray-800 uppercase">Margem Líquida</span>
                                   <span className={`text-lg font-black ${margemLiquida >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
