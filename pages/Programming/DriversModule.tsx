@@ -11,12 +11,14 @@ import { Driver, VehicleType, RouteEntry, User, CompanyId } from '../../App';
 interface DriversModuleProps {
   activeCompany: CompanyId;
   drivers: Driver[];
-  setDrivers: React.Dispatch<React.SetStateAction<Driver[]>>;
+  addDriver: (newDriver: Omit<Driver, 'id' | 'ownerId'>) => void;
+  updateDriver: (updatedDriver: Driver) => void;
+  deleteDriver: (driverId: string) => void;
   vehicleTypes: VehicleType[];
   currentUser: User;
 }
 
-const DriversModule: React.FC<DriversModuleProps> = ({ activeCompany, drivers, setDrivers, vehicleTypes, currentUser }) => {
+const DriversModule: React.FC<DriversModuleProps> = ({ activeCompany, drivers, addDriver, updateDriver, deleteDriver, vehicleTypes, currentUser }) => {
   const [showModal, setShowModal] = useState(false);
   const [showRouteModal, setShowRouteModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -59,14 +61,9 @@ const DriversModule: React.FC<DriversModuleProps> = ({ activeCompany, drivers, s
 
   const handleSave = () => {
     if (selectedDriverId) {
-      setDrivers(drivers.map(d => d.id === selectedDriverId ? { ...d, ...formData as Driver } : d));
+      updateDriver({ ...formData as Driver, id: selectedDriverId });
     } else {
-      const newDriver: Driver = {
-        ...formData as Driver,
-        id: `D${Math.random().toString(36).substr(2, 4).toUpperCase()}`,
-        ownerId: activeCompany === 'GLOBAL' ? 'LOG' : activeCompany
-      };
-      setDrivers([...drivers, newDriver]);
+      addDriver(formData as Omit<Driver, 'id' | 'ownerId'>);
     }
     setShowModal(false);
     resetForm();
@@ -83,31 +80,27 @@ const DriversModule: React.FC<DriversModuleProps> = ({ activeCompany, drivers, s
   const handleAddManualRoute = () => {
     if (!manualRoute.origin || !manualRoute.destination || !selectedDriverId) return;
     
-    setDrivers(prev => prev.map(d => {
-      if (d.id === selectedDriverId) {
-        return {
-          ...d,
-          historyRoutes: [
-            ...d.historyRoutes,
-            { ...manualRoute as RouteEntry, type: 'Manual' }
-          ]
-        };
-      }
-      return d;
-    }));
+    const driver = drivers.find(d => d.id === selectedDriverId);
+    if (driver) {
+      updateDriver({
+        ...driver,
+        historyRoutes: [
+          ...driver.historyRoutes,
+          { ...manualRoute as RouteEntry, type: 'Manual' }
+        ]
+      });
+    }
     setManualRoute({ ...manualRoute, origin: '', destination: '' });
   };
 
   const handleRemoveRoute = (route: RouteEntry) => {
-    setDrivers(prev => prev.map(d => {
-      if (d.id === selectedDriverId) {
-        return {
-          ...d,
-          historyRoutes: d.historyRoutes.filter(r => r !== route)
-        };
-      }
-      return d;
-    }));
+    const driver = drivers.find(d => d.id === selectedDriverId);
+    if (driver) {
+      updateDriver({
+        ...driver,
+        historyRoutes: driver.historyRoutes.filter(r => r !== route)
+      });
+    }
   };
 
   const resetForm = () => {
@@ -229,12 +222,12 @@ const DriversModule: React.FC<DriversModuleProps> = ({ activeCompany, drivers, s
                         <button onClick={() => handleOpenRouteManager(driver)} className="w-full px-6 py-4 flex items-center gap-3 text-left hover:bg-gray-50 transition-colors group">
                           <MapPinned size={16} className="text-gray-400 group-hover:text-bordeaux" /><span className="text-xs font-black uppercase text-gray-600 tracking-widest">Gerenciar Rotas</span>
                         </button>
-                        <button onClick={() => { setDrivers(drivers.map(d => d.id === driver.id ? {...d, status: d.status === 'Bloqueado' ? 'Disponível' : 'Bloqueado'} : d)); setOpenMenuId(null); }} className="w-full px-6 py-4 flex items-center gap-3 text-left hover:bg-gray-50 transition-colors group">
+                        <button onClick={() => { updateDriver({...driver, status: driver.status === 'Bloqueado' ? 'Disponível' : 'Bloqueado'}); setOpenMenuId(null); }} className="w-full px-6 py-4 flex items-center gap-3 text-left hover:bg-gray-50 transition-colors group">
                           {driver.status === 'Bloqueado' ? <><Unlock size={16} className="text-emerald-500" /><span className="text-xs font-black uppercase text-emerald-600 tracking-widest">Desbloquear</span></> : <><Lock size={16} className="text-red-500" /><span className="text-xs font-black uppercase text-red-600 tracking-widest">Bloquear Operador</span></>}
                         </button>
                         <div className="h-[1px] bg-gray-100 w-full"></div>
                         {currentUser.role === 'Administrador' && (
-                          <button onClick={() => { if(window.confirm('Excluir parceiro?')) setDrivers(drivers.filter(d => d.id !== driver.id)); setOpenMenuId(null); }} className="w-full px-6 py-4 flex items-center gap-3 text-left hover:bg-red-50 transition-colors group">
+                          <button onClick={() => { if(window.confirm('Excluir parceiro?')) deleteDriver(driver.id); setOpenMenuId(null); }} className="w-full px-6 py-4 flex items-center gap-3 text-left hover:bg-red-50 transition-colors group">
                             <Trash2 size={16} className="text-red-400" /><span className="text-xs font-black uppercase text-red-600 tracking-widest">Excluir Parceiro</span>
                           </button>
                         )}

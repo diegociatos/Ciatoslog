@@ -65,7 +65,7 @@ const ProgrammerDashboard: React.FC<ProgrammerDashboardProps> = ({ loads, driver
   }, [loads, selectedYear, selectedMonth]);
 
   const pendingLoads = filteredLoads.filter(l => {
-    if (l.status !== 'AGUARDANDO PROGRAMAÇÃO') return false;
+    if (l.status !== 'AGUARDANDO PROGRAMAÇÃO' && l.status !== 'EM_PROGRAMACAO' && l.status !== 'PRONTO_PROGRAMAR') return false;
     if (currentUser.role === 'Comercial') {
       return l.assignedProgrammer === 'Comercial' && l.commercialRep === currentUser.name;
     }
@@ -89,7 +89,14 @@ const ProgrammerDashboard: React.FC<ProgrammerDashboardProps> = ({ loads, driver
   const blockedDrivers = drivers.filter(d => d.status === 'Bloqueado');
 
   // Minhas programações (Custo vs Faturamento)
-  const myProgrammedLoads = filteredLoads.filter(l => l.assignedProgrammer === currentUser.name && l.status !== 'AGUARDANDO PROGRAMAÇÃO' && l.status !== 'PERDIDO');
+  const myProgrammedLoads = filteredLoads.filter(l => 
+    l.assignedProgrammer === currentUser.name && 
+    l.status !== 'AGUARDANDO PROGRAMAÇÃO' && 
+    l.status !== 'PRONTO_PROGRAMAR' &&
+    l.status !== 'PERDIDO' &&
+    l.status !== 'PROSPECTO' &&
+    l.status !== 'PROPOSTA_APRESENTADA'
+  );
   const totalValue = myProgrammedLoads.reduce((acc, l) => acc + (l.value || 0), 0);
   const totalCost = myProgrammedLoads.reduce((acc, l) => acc + (l.cost || 0), 0);
   const costRatio = totalValue > 0 ? (totalCost / totalValue) * 100 : 0;

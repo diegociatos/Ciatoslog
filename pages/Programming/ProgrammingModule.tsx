@@ -8,17 +8,18 @@ import {
   MinusCircle, PlusCircle, Receipt, Scale, Package, Info, Edit3, RefreshCcw,
   Building2, Target, ClipboardList, Phone, UserCheck, Briefcase, HardDrive, Paperclip, Upload
 } from 'lucide-react';
-import { Load, Driver, useCompany, Transaction, User as UserType } from '../../App';
+import { Load, Driver, useCompany, Transaction, User as UserType, LoadStatus } from '../../App';
 
 interface ProgrammingModuleProps {
   loads: Load[];
   updateLoad: (updatedLoad: Load) => void;
   drivers: Driver[];
+  addDriver: (newDriver: Omit<Driver, 'id' | 'ownerId'>) => void;
   addTransaction: (transaction: Omit<Transaction, 'id' | 'ownerId'>, specificOwnerId?: 'BD' | 'LOG') => void;
   currentUser: UserType;
 }
 
-const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad, drivers, addTransaction, currentUser }) => {
+const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad, drivers, addDriver, addTransaction, currentUser }) => {
   const { activeCompany, getCompanyBadge } = useCompany();
   const [activeTab, setActiveTab] = useState<'Aguardando' | 'EmTransito'>('Aguardando');
   const [searchLoadTerm, setSearchLoadTerm] = useState('');
@@ -34,7 +35,6 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
   const [advanceValue, setAdvanceValue] = useState<number>(0);
 
   // Estados de Cadastro Rápido de Motorista
-  const [localDrivers, setLocalDrivers] = useState<Driver[]>([]);
   const [isRegisteringDriver, setIsRegisteringDriver] = useState(false);
   const [newDriverData, setNewDriverData] = useState({
     name: '',
@@ -50,12 +50,12 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
 
   // Estados de Anexo de Documentos
   const [uploadingDocsLoad, setUploadingDocsLoad] = useState<Load | null>(null);
-  const [docs, setDocs] = useState<{ cte: File | null, ciot: File | null, contract: File | null }>({ cte: null, ciot: null, contract: null });
+  const [docs, setDocs] = useState<{ cte: File | null, ciot: File | null, contract: File | null, nf: File | null }>({ cte: null, ciot: null, contract: null, nf: null });
 
   const [lostReasonModal, setLostReasonModal] = useState<{ isOpen: boolean; loadId: string; reason: string }>({ isOpen: false, loadId: '', reason: '' });
 
   const allDrivers = useMemo(() => {
-    const combined = [...drivers, ...localDrivers];
+    const combined = [...drivers];
     if (!searchTerm) return combined;
     const term = searchTerm.toLowerCase();
     return combined.filter(d => 
@@ -63,7 +63,7 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
       d.cnpj_cpf.toLowerCase().includes(term) || 
       d.plate.toLowerCase().includes(term)
     );
-  }, [drivers, localDrivers, searchTerm]);
+  }, [drivers, searchTerm]);
 
   // Resetar estados ao fechar ou mudar de carga
   useEffect(() => {
@@ -90,24 +90,23 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
   const handleSaveNewDriver = () => {
     if (!newDriverData.name || !newDriverData.cnpj_cpf || !newDriverData.plate) return;
 
-    const newDriver: Driver = {
-      id: `new-${Date.now()}`,
+    const newDriver = {
       name: newDriverData.name,
       cnpj_cpf: newDriverData.cnpj_cpf,
       type: newDriverData.type,
       phone: newDriverData.phone,
       vehicleType: newDriverData.vehicleType,
       plate: newDriverData.plate,
-      pix: newDriverData.pix,
+      pixKey: newDriverData.pix,
       antt: '',
       completedTrips: 0,
       historyRoutes: [],
       status: 'Disponível',
-      rating: 5.0,
-      ownerId: activeCompany === 'GLOBAL' ? 'LOG' : activeCompany
-    };
+      rating: 5.0
+    } as any;
 
-    setLocalDrivers([...localDrivers, newDriver]);
+    addDriver(newDriver);
+    setIsRegisteringDriver(false);
     setNewDriverData({
       name: '',
       cnpj_cpf: '',
@@ -158,11 +157,14 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
       driver: selectedDriver.name,
       plate: selectedDriver.plate,
       cost: totalCusto,
+      effectiveDriverCost: totalCusto,
+      isDriverCostEffective: true,
       advance: advanceValue,
       balance: saldoFinal,
       hasTaxes: hasTaxes,
       taxesValue: taxesValue,
-      taxesRetained: hasTaxes ? taxesValue : 0
+      taxesRetained: hasTaxes ? taxesValue : 0,
+      nfUrl: docs.nf ? docs.nf.name : programmingLoad.nfUrl
     };
 
     updateLoad(updatedLoad);
@@ -193,13 +195,18 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
   };
 
   const waitingLoads = loads.filter(l => {
-    if (l.status !== 'AGUARDANDO PROGRAMAÇÃO') return false;
+    if (l.status !== 'AGUARDANDO PROGRAMAÇÃO' && l.status !== 'EM_PROGRAMACAO' && l.status !== 'PRONTO_PROGRAMAR') return false;
+    
     if (currentUser.role === 'Comercial') {
-      if (l.assignedProgrammer !== 'Comercial' || l.commercialRep !== currentUser.name) return false;
+      if (l.capturingCommercialUserId !== currentUser.id) return false;
     }
+    
     if (currentUser.role === 'Operacional') {
+      // Se for operacional, vê o que está atribuído a ele ou ao "Setor"
       if (l.assignedProgrammer === 'Comercial') return false;
+      if (l.assignedProgrammer !== 'Setor' && l.assignedProgrammer !== currentUser.name) return false;
     }
+
     if (searchLoadTerm) {
       const term = searchLoadTerm.toLowerCase();
       return l.customer.toLowerCase().includes(term) || 
@@ -283,10 +290,23 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
                       Informar Perda
                     </button>
                     <button 
-                      onClick={() => setProgrammingLoad(load)}
+                      onClick={() => {
+                        // Se a carga estiver no "Setor", ao clicar em programar ela assume o programador logado
+                        if (load.assignedProgrammer === 'Setor' && currentUser.role === 'Operacional') {
+                          const updatedLoad = {
+                            ...load,
+                            assignedProgrammer: currentUser.name,
+                            status: 'EM_PROGRAMACAO' as LoadStatus
+                          };
+                          updateLoad(updatedLoad);
+                          setProgrammingLoad(updatedLoad);
+                        } else {
+                          setProgrammingLoad(load);
+                        }
+                      }}
                       className="bg-bordeaux text-white px-6 py-2.5 rounded-xl font-black text-xs uppercase shadow-lg hover:scale-105 transition-all"
                     >
-                      Programar
+                      {load.status === 'EM_PROGRAMACAO' ? 'Continuar' : 'Programar'}
                     </button>
                   </td>
                 </tr>
@@ -388,6 +408,49 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
                     <ClipboardList size={18} /> Dossiê da Carga
                   </h4>
                   <p className="text-[10px] font-bold text-gray-400 uppercase leading-tight">Informações completas para suporte à operação e programação.</p>
+                </div>
+
+                {/* Controle de Status/Programador */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-gray-800">
+                    <RefreshCcw size={16} className="text-bordeaux" />
+                    <span className="text-xs font-black uppercase tracking-tight font-serif">Status & Atribuição</span>
+                  </div>
+                  <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm space-y-4">
+                    <div>
+                      <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Status Atual</label>
+                      <select 
+                        value={programmingLoad.status}
+                        onChange={(e) => {
+                          const newStatus = e.target.value as LoadStatus;
+                          updateLoad({ ...programmingLoad, status: newStatus });
+                          setProgrammingLoad({ ...programmingLoad, status: newStatus });
+                        }}
+                        className="w-full mt-1 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2 text-xs font-bold text-gray-700 outline-none focus:ring-2 focus:ring-bordeaux/20"
+                      >
+                        <option value="AGUARDANDO PROGRAMAÇÃO">Aguardando Programação</option>
+                        <option value="EM_PROGRAMACAO">Em Programação</option>
+                        <option value="PERDIDO">Perdido</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Atribuído a</label>
+                      <select 
+                        value={programmingLoad.assignedProgrammer}
+                        onChange={(e) => {
+                          const newVal = e.target.value;
+                          updateLoad({ ...programmingLoad, assignedProgrammer: newVal });
+                          setProgrammingLoad({ ...programmingLoad, assignedProgrammer: newVal });
+                        }}
+                        className="w-full mt-1 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2 text-xs font-bold text-gray-700 outline-none focus:ring-2 focus:ring-bordeaux/20"
+                      >
+                        <option value="Setor">Setor (Todos)</option>
+                        <option value="Comercial">Comercial (Próprio)</option>
+                        <option value={currentUser.name}>{currentUser.name} (Eu)</option>
+                        {/* Aqui poderiam vir outros programadores se tivéssemos a lista */}
+                      </select>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Seção: Dados do Cliente */}
@@ -975,7 +1038,7 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
             </div>
 
             <div className="p-8 space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="border border-dashed border-gray-300 rounded-xl p-4 text-center hover:bg-gray-50 transition-colors">
                   <input 
                     type="file" 
@@ -1017,6 +1080,20 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
                     <span className="text-xs text-gray-500">{docs.contract ? docs.contract.name : 'Nenhum arquivo'}</span>
                   </label>
                 </div>
+
+                <div className="border border-dashed border-gray-300 rounded-xl p-4 text-center hover:bg-gray-50 transition-colors">
+                  <input 
+                    type="file" 
+                    id="nfDocProg" 
+                    className="hidden" 
+                    onChange={(e) => setDocs({...docs, nf: e.target.files?.[0] || null})}
+                  />
+                  <label htmlFor="nfDocProg" className="cursor-pointer flex flex-col items-center gap-2">
+                    <Upload size={24} className={docs.nf ? "text-emerald-500" : "text-gray-400"} />
+                    <span className="text-sm font-bold text-gray-700">Anexar NF</span>
+                    <span className="text-xs text-gray-500">{docs.nf ? docs.nf.name : 'Nenhum arquivo'}</span>
+                  </label>
+                </div>
               </div>
             </div>
 
@@ -1033,7 +1110,8 @@ const ProgrammingModule: React.FC<ProgrammingModuleProps> = ({ loads, updateLoad
                     ...uploadingDocsLoad,
                     cteUrl: docs.cte ? docs.cte.name : uploadingDocsLoad.cteUrl,
                     ciotUrl: docs.ciot ? docs.ciot.name : uploadingDocsLoad.ciotUrl,
-                    contractUrl: docs.contract ? docs.contract.name : uploadingDocsLoad.contractUrl
+                    contractUrl: docs.contract ? docs.contract.name : uploadingDocsLoad.contractUrl,
+                    nfUrl: docs.nf ? docs.nf.name : uploadingDocsLoad.nfUrl
                   });
                   setUploadingDocsLoad(null);
                 }}

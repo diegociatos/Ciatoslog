@@ -7,10 +7,10 @@ interface CteEmissionModuleProps {
   updateLoad: (updatedLoad: Load) => void;
   currentUser: UserType;
   ctes: CteRecord[];
-  setCtes: React.Dispatch<React.SetStateAction<CteRecord[]>>;
+  addCte: (newCte: CteRecord) => void;
 }
 
-const CteEmissionModule: React.FC<CteEmissionModuleProps> = ({ loads, updateLoad, currentUser, ctes, setCtes }) => {
+const CteEmissionModule: React.FC<CteEmissionModuleProps> = ({ loads, updateLoad, currentUser, ctes, addCte }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedLoad, setSelectedLoad] = useState<Load | null>(null);
   const [cteNumber, setCteNumber] = useState('');
@@ -107,7 +107,7 @@ const CteEmissionModule: React.FC<CteEmissionModuleProps> = ({ loads, updateLoad
       isPaid: false
     };
 
-    setCtes([newCteRecord, ...ctes]);
+    addCte(newCteRecord);
     updateLoad(updatedLoad);
     setSelectedLoad(null);
   };

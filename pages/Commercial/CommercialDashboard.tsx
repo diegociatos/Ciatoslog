@@ -10,9 +10,15 @@ import {
   AlertCircle,
   Truck,
   Wallet,
-  Calendar
+  Calendar,
+  LayoutDashboard,
+  Columns as KanbanIcon,
+  ChevronRight,
+  MoreVertical,
+  MapPin,
+  CalendarDays
 } from 'lucide-react';
-import { Load, Client, User, CommercialGoal, CommissionRule } from '../../App';
+import { Load, Client, User, CommercialGoal, CommissionRule, LoadStatus } from '../../App';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area
@@ -32,6 +38,7 @@ const CommercialDashboard: React.FC<CommercialDashboardProps> = ({ loads, client
 
   const [selectedYear, setSelectedYear] = useState<string>(currentYear.toString());
   const [selectedMonth, setSelectedMonth] = useState<string>(currentMonth);
+  const [viewMode, setViewMode] = useState<'dashboard' | 'kanban'>('dashboard');
 
   const years = Array.from({ length: 10 }, (_, i) => (currentYear - 2 + i).toString());
 
@@ -77,6 +84,20 @@ const CommercialDashboard: React.FC<CommercialDashboardProps> = ({ loads, client
   const profitMargin = totalSales > 0 ? ((totalSales - totalCost) / totalSales) * 100 : 0;
   
   const activeClients = myClients.filter(c => c.status === 'Ativo').length;
+  const prospectingCount = useMemo(() => {
+    const prospectingClients = myClients.filter(c => {
+      if (c.status !== 'Prospecção') return false;
+      if (!c.createdAt) return false;
+      const clientDate = new Date(c.createdAt);
+      const clientYear = clientDate.getFullYear().toString();
+      const clientMonth = (clientDate.getMonth() + 1).toString().padStart(2, '0');
+      
+      if (clientYear !== selectedYear) return false;
+      if (selectedMonth !== 'all' && clientMonth !== selectedMonth) return false;
+      return true;
+    });
+    return prospectingClients.length;
+  }, [myClients, selectedYear, selectedMonth]);
   const pendingLoads = validLoads.filter(l => l.status === 'AGUARDANDO PROGRAMAÇÃO').length;
   
   const totalMyLoads = validLoads.length;
@@ -107,16 +128,12 @@ const CommercialDashboard: React.FC<CommercialDashboardProps> = ({ loads, client
   const newClientsThisPeriod = useMemo(() => {
     return clients.filter(c => {
       if (c.commercialRep !== currentUser.name) return false;
-      // Assuming we don't have a creation date for clients, we'll use lastNegotiation as a proxy or just count active clients for now if we don't have a created date.
-      // Let's check if client has a date field. If not, we'll just use a placeholder logic or activeClients.
-      // For a real app, Client should have a 'createdAt' field.
-      // We'll just use activeClients for now or simulate new clients.
       return c.status === 'Ativo';
     }).length;
   }, [clients, currentUser.name]);
   
   // For prospecting, let's just use a simple calculation or mock if we don't have creation dates
-  const prospectingProgress = prospectingGoal > 0 ? Math.min(100, Math.round((activeClients / prospectingGoal) * 100)) : 0;
+  const prospectingProgress = prospectingGoal > 0 ? Math.min(100, Math.round((prospectingCount / prospectingGoal) * 100)) : 0;
 
   // Comissões e Metas Extras
   const commissionData = useMemo(() => {
@@ -203,6 +220,27 @@ const CommercialDashboard: React.FC<CommercialDashboardProps> = ({ loads, client
     return data;
   }, [selectedMonth, selectedYear, loads, currentUser.name, totalSales, months]);
 
+  const kanbanColumns: { id: LoadStatus; title: string; color: string }[] = [
+    { id: 'PROSPECTO', title: 'Prospecção', color: 'bg-gray-100 text-gray-700' },
+    { id: 'PROPOSTA_APRESENTADA', title: 'Proposta Apresentada', color: 'bg-blue-100 text-blue-700' },
+    { id: 'NEGOCIACAO', title: 'Negociação', color: 'bg-amber-100 text-amber-700' },
+    { id: 'DOCUMENTACAO', title: 'Documentação', color: 'bg-blue-200 text-blue-800' },
+    { id: 'PRONTO_PROGRAMAR', title: 'Pronto p/ Programar', color: 'bg-emerald-100 text-emerald-700' },
+    { id: 'AGUARDANDO PROGRAMAÇÃO', title: 'Aguardando Programação', color: 'bg-purple-100 text-purple-700' },
+    { id: 'EM_PROGRAMACAO', title: 'Em Programação', color: 'bg-indigo-100 text-indigo-700' },
+    { id: 'EM TRÂNSITO', title: 'Em Trânsito', color: 'bg-blue-600 text-white' },
+    { id: 'ENTREGUE', title: 'Entregue', color: 'bg-gray-200 text-gray-800' },
+    { id: 'PERDIDO', title: 'Perdido', color: 'bg-red-100 text-red-700' },
+  ];
+
+  const kanbanData = useMemo(() => {
+    const columns: Record<string, Load[]> = {};
+    kanbanColumns.forEach(col => {
+      columns[col.id] = filteredLoads.filter(l => l.status === col.id);
+    });
+    return columns;
+  }, [filteredLoads, kanbanColumns]);
+
   return (
     <div className="p-8 h-full overflow-y-auto bg-gray-50/50">
       <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -213,34 +251,63 @@ const CommercialDashboard: React.FC<CommercialDashboardProps> = ({ loads, client
           <p className="text-gray-500 mt-1">Aqui está o resumo das suas vendas e clientes.</p>
         </div>
         
-        <div className="flex items-center gap-3 bg-white p-2 rounded-2xl shadow-sm border border-gray-100">
-          <div className="flex items-center gap-2 px-3 border-r border-gray-100">
-            <Calendar size={18} className="text-gray-400" />
-            <select 
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              className="bg-transparent border-none text-sm font-bold text-gray-700 focus:ring-0 cursor-pointer outline-none"
+        <div className="flex items-center gap-4">
+          <div className="flex bg-white p-1 rounded-xl shadow-sm border border-gray-100">
+            <button
+              onClick={() => setViewMode('dashboard')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+                viewMode === 'dashboard' 
+                  ? 'bg-bordeaux text-white shadow-md' 
+                  : 'text-gray-500 hover:bg-gray-50'
+              }`}
             >
-              {months.map(m => (
-                <option key={m.value} value={m.value}>{m.label}</option>
-              ))}
-            </select>
+              <LayoutDashboard size={18} />
+              Dashboard
+            </button>
+            <button
+              onClick={() => setViewMode('kanban')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+                viewMode === 'kanban' 
+                  ? 'bg-bordeaux text-white shadow-md' 
+                  : 'text-gray-500 hover:bg-gray-50'
+              }`}
+            >
+              <KanbanIcon size={18} />
+              Kanban
+            </button>
           </div>
-          <div className="px-3">
-            <select 
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(e.target.value)}
-              className="bg-transparent border-none text-sm font-bold text-gray-700 focus:ring-0 cursor-pointer outline-none"
-            >
-              {years.map(y => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
+
+          <div className="flex items-center gap-3 bg-white p-2 rounded-2xl shadow-sm border border-gray-100">
+            <div className="flex items-center gap-2 px-3 border-r border-gray-100">
+              <Calendar size={18} className="text-gray-400" />
+              <select 
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="bg-transparent border-none text-sm font-bold text-gray-700 focus:ring-0 cursor-pointer outline-none"
+              >
+                {months.map(m => (
+                  <option key={m.value} value={m.value}>{m.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="px-3">
+              <select 
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(e.target.value)}
+                className="bg-transparent border-none text-sm font-bold text-gray-700 focus:ring-0 cursor-pointer outline-none"
+              >
+                {years.map(y => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* KPIs */}
+      {viewMode === 'dashboard' ? (
+        <>
+          {/* KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 relative overflow-hidden group">
           <div className="absolute -right-6 -top-6 w-24 h-24 bg-emerald-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out" />
@@ -274,6 +341,27 @@ const CommercialDashboard: React.FC<CommercialDashboardProps> = ({ loads, client
             <h3 className="text-gray-500 font-medium text-sm mb-1">Custo Carreteiro</h3>
             <div className="text-3xl font-black text-gray-900 tracking-tight">
               {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalCost)}
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 relative overflow-hidden group">
+          <div className="absolute -right-6 -top-6 w-24 h-24 bg-emerald-50 rounded-full group-hover:scale-150 transition-transform duration-500 ease-out" />
+          <div className="relative z-10">
+            <div className="flex justify-between items-start mb-4">
+              <div className="p-3 bg-emerald-100 text-emerald-600 rounded-xl">
+                <Target size={24} />
+              </div>
+              <span className="text-sm font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg">
+                Meta: {userGoals.prospectingGoal} leads
+              </span>
+            </div>
+            <h3 className="text-gray-500 font-medium text-sm mb-1">Progresso de Prospecção</h3>
+            <div className="text-3xl font-black text-gray-900 tracking-tight">
+              {prospectingProgress} / {userGoals.prospectingGoal}
+            </div>
+            <div className="w-full bg-gray-100 rounded-full h-2 mt-3">
+              <div className="bg-emerald-600 h-2 rounded-full" style={{ width: `${userGoals.prospectingGoal > 0 ? Math.min((prospectingProgress / userGoals.prospectingGoal) * 100, 100) : 0}%` }} />
             </div>
           </div>
         </div>
@@ -517,8 +605,77 @@ const CommercialDashboard: React.FC<CommercialDashboardProps> = ({ loads, client
           </table>
         </div>
       </div>
+    </>
+  ) : (
+    /* Kanban View */
+    <div className="flex gap-6 overflow-x-auto pb-6 min-h-[calc(100vh-250px)]">
+      {kanbanColumns.map(column => (
+        <div key={column.id} className="flex-shrink-0 w-80 flex flex-col">
+          <div className={`flex items-center justify-between p-4 rounded-t-2xl border-b-2 border-white ${column.color}`}>
+            <h3 className="font-black text-sm uppercase tracking-wider">{column.title}</h3>
+            <span className="bg-white/50 px-2 py-0.5 rounded-lg text-xs font-bold">
+              {kanbanData[column.id]?.length || 0}
+            </span>
+          </div>
+          
+          <div className="flex-1 bg-gray-100/50 p-3 rounded-b-2xl space-y-3 overflow-y-auto max-h-[calc(100vh-320px)] scrollbar-hide">
+            {kanbanData[column.id]?.map(load => (
+              <div 
+                key={load.id} 
+                className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 hover:shadow-md hover:border-bordeaux/20 transition-all cursor-pointer group"
+              >
+                <div className="flex justify-between items-start mb-2">
+                  <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                    {load.internalNumber || load.proposalNumber || `#${load.id.substring(0, 6)}`}
+                  </span>
+                  <button className="text-gray-300 hover:text-gray-600">
+                    <MoreVertical size={14} />
+                  </button>
+                </div>
+                
+                <h4 className="font-bold text-gray-900 mb-3 group-hover:text-bordeaux transition-colors">
+                  {load.customer}
+                </h4>
+                
+                <div className="space-y-2 mb-4">
+                  <div className="flex items-center gap-2 text-xs text-gray-500">
+                    <MapPin size={12} className="text-gray-400" />
+                    <span className="truncate">{load.origin} → {load.destination}</span>
+                  </div>
+                  {load.collectionDate && (
+                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                      <CalendarDays size={12} className="text-gray-400" />
+                      <span>Coleta: {new Date(load.collectionDate).toLocaleDateString('pt-BR')}</span>
+                    </div>
+                  )}
+                </div>
+                
+                <div className="flex items-center justify-between pt-3 border-t border-gray-50">
+                  <div className="text-sm font-black text-emerald-600">
+                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(load.value)}
+                  </div>
+                  <div className="flex -space-x-2">
+                    <div className="w-6 h-6 rounded-full bg-bordeaux text-white flex items-center justify-center text-[10px] font-bold border-2 border-white">
+                      {load.commercialRep.substring(0, 1)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+            
+            {(!kanbanData[column.id] || kanbanData[column.id].length === 0) && (
+              <div className="flex flex-col items-center justify-center py-12 text-gray-400 opacity-50">
+                <LayoutDashboard size={32} strokeWidth={1} className="mb-2" />
+                <span className="text-xs font-medium italic text-center px-4">Nenhuma carga nesta etapa</span>
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
     </div>
-  );
+  )}
+</div>
+);
 };
 
 export default CommercialDashboard;

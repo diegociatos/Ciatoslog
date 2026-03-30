@@ -11,20 +11,44 @@ service cloud.firestore {
       return request.auth != null;
     }
     
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.token.email)).data;
+    }
+
+    function hasRole(role) {
+      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.token.email)) && getUserData().role == role;
+    }
+
     function isAdmin() {
       return isAuthenticated() && (
-        (request.auth.token.email == "diegociatos@gmail.com") ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.token.email)) && get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role == 'Administrador')
+        request.auth.token.email == "diegociatos@gmail.com" ||
+        request.auth.token.email == "ivaldo@ciatos.com.br" ||
+        hasRole('Administrador')
       );
+    }
+
+    function isGestor() {
+      return hasRole('Gestor');
+    }
+
+    function isFinanceiro() {
+      return hasRole('Financeiro');
+    }
+
+    function isOperacional() {
+      return hasRole('Operacional');
+    }
+
+    function isComercial() {
+      return hasRole('Comercial');
+    }
+
+    function isCliente() {
+      return hasRole('Cliente');
     }
     
     function isOwner(userId) {
-      return isAuthenticated() && request.auth.token.email == userId;
-    }
-
-    // Basic validation
-    function hasRequiredFields(fields) {
-      return request.resource.data.keys().hasAll(fields);
+      return isAuthenticated() && (request.auth.token.email == userId || request.auth.uid == userId);
     }
 
     // ===============================================================
@@ -33,13 +57,9 @@ service cloud.firestore {
 
     // Users
     match /users/{userId} {
-      // Allow get for everyone to support manual login check (migration)
       allow get: if true;
-      // Admins can read all, users can read their own profile
-      allow list: if isAuthenticated() && (isOwner(userId) || isAdmin());
-      // Only admins can create new users (or the initial admin bootstrapping)
-      allow create: if isAuthenticated() && (isAdmin() || (isOwner(userId) && request.resource.data.role == 'Cliente'));
-      // Users can update their own profile (but not their role), admins can update any
+      allow list: if isAuthenticated() && (isAdmin() || isFinanceiro());
+      allow create: if isAuthenticated() && (isAdmin() || isOwner(userId));
       allow update: if isAuthenticated() && (
         isAdmin() || 
         (isOwner(userId) && request.resource.data.role == resource.data.role)
@@ -56,19 +76,19 @@ service cloud.firestore {
     // CTEs
     match /ctes/{cteId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && (isAdmin() || get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role in ['Operacional', 'Financeiro', 'Gestor', 'Comercial']);
+      allow write: if isAuthenticated() && (isAdmin() || isOperacional() || isFinanceiro() || isGestor() || isComercial());
     }
 
     // Clients
     match /clients/{clientId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && (isAdmin() || get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role in ['Comercial', 'Gestor', 'Financeiro']);
+      allow write: if isAuthenticated() && (isAdmin() || isComercial() || isGestor() || isFinanceiro());
     }
 
     // Commercial Goals
     match /commercialGoals/{goalId} {
       allow read: if isAuthenticated();
-      allow write: if isAdmin() || (isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role in ['Gestor']);
+      allow write: if isAdmin() || isGestor();
     }
 
     // Commission Rules
@@ -80,7 +100,7 @@ service cloud.firestore {
     // Drivers
     match /drivers/{driverId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && (isAdmin() || get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role in ['Operacional', 'Gestor', 'Financeiro', 'Comercial']);
+      allow write: if isAuthenticated() && (isAdmin() || isOperacional() || isGestor() || isFinanceiro() || isComercial());
     }
 
     // Vehicle Types
@@ -98,25 +118,25 @@ service cloud.firestore {
     // Loads
     match /loads/{loadId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && (isAdmin() || get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role in ['Operacional', 'Comercial', 'Gestor', 'Financeiro']);
+      allow write: if isAuthenticated() && (isAdmin() || isOperacional() || isComercial() || isGestor() || isFinanceiro());
     }
 
     // Bank Accounts
     match /bankAccounts/{accountId} {
-      allow read: if isAuthenticated() && (isAdmin() || get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role in ['Financeiro', 'Gestor']);
-      allow write: if isAdmin() || (isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role in ['Financeiro', 'Gestor']);
+      allow read: if isAuthenticated() && (isAdmin() || isFinanceiro() || isGestor() || isOperacional() || isComercial());
+      allow write: if isAdmin() || isFinanceiro() || isGestor();
     }
 
     // DRE Categories
     match /dreCategories/{categoryId} {
-      allow read: if isAuthenticated() && (isAdmin() || get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role in ['Financeiro', 'Gestor']);
+      allow read: if isAuthenticated() && (isAdmin() || isFinanceiro() || isGestor() || isOperacional() || isComercial());
       allow write: if isAdmin();
     }
 
     // Transactions
     match /transactions/{transactionId} {
-      allow read: if isAuthenticated() && (isAdmin() || get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role in ['Financeiro', 'Gestor']);
-      allow write: if isAuthenticated() && (isAdmin() || get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role in ['Financeiro', 'Gestor']);
+      allow read: if isAuthenticated() && (isAdmin() || isFinanceiro() || isGestor() || isOperacional() || isComercial());
+      allow write: if isAuthenticated() && (isAdmin() || isFinanceiro() || isGestor());
     }
   }
 }

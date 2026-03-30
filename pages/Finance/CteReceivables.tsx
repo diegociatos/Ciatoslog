@@ -4,10 +4,10 @@ import { CheckCircle, AlertCircle, Edit2, Save, X } from 'lucide-react';
 
 interface CteReceivablesProps {
   ctes: CteRecord[];
-  setCtes: React.Dispatch<React.SetStateAction<CteRecord[]>>;
+  updateCte: (updatedCte: CteRecord) => void;
 }
 
-const CteReceivables: React.FC<CteReceivablesProps> = ({ ctes, setCtes }) => {
+const CteReceivables: React.FC<CteReceivablesProps> = ({ ctes, updateCte }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDueDate, setEditDueDate] = useState('');
@@ -33,9 +33,10 @@ const CteReceivables: React.FC<CteReceivablesProps> = ({ ctes, setCtes }) => {
     .reduce((acc, cte) => acc + cte.cteValue, 0);
 
   const handleMarkAsPaid = (id: string) => {
-    setCtes(ctes.map(cte => 
-      cte.id === id ? { ...cte, isPaid: true } : cte
-    ));
+    const cte = ctes.find(c => c.id === id);
+    if (cte) {
+      updateCte({ ...cte, isPaid: true });
+    }
   };
 
   const handleStartEdit = (cte: CteRecord) => {
@@ -44,9 +45,10 @@ const CteReceivables: React.FC<CteReceivablesProps> = ({ ctes, setCtes }) => {
   };
 
   const handleSaveEdit = (id: string) => {
-    setCtes(ctes.map(cte => 
-      cte.id === id ? { ...cte, dueDate: editDueDate } : cte
-    ));
+    const cte = ctes.find(c => c.id === id);
+    if (cte) {
+      updateCte({ ...cte, dueDate: editDueDate });
+    }
     setEditingId(null);
   };
 

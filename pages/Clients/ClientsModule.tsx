@@ -38,16 +38,34 @@ import firebaseConfig from '../../firebase-applet-config.json';
 interface ClientsModuleProps {
   activeCompany: CompanyId;
   clients: Client[];
-  setClients: React.Dispatch<React.SetStateAction<Client[]>>;
+  addClient: (newClient: Omit<Client, 'id'>) => void;
+  updateClient: (updatedClient: Client) => void;
+  deleteClient: (clientId: string) => void;
   segments: string[];
   clientTypes: string[];
   loads: Load[];
   currentUser: UserType;
   users: UserType[];
-  setUsers: React.Dispatch<React.SetStateAction<UserType[]>>;
+  addUser: (newUser: UserType) => void;
+  updateUser: (updatedUser: UserType) => void;
+  deleteUser: (userEmail: string) => void;
 }
 
-const ClientsModule: React.FC<ClientsModuleProps> = ({ activeCompany, clients, setClients, segments, clientTypes, loads, currentUser, users, setUsers }) => {
+const ClientsModule: React.FC<ClientsModuleProps> = ({ 
+  activeCompany, 
+  clients, 
+  addClient, 
+  updateClient, 
+  deleteClient, 
+  segments, 
+  clientTypes, 
+  loads, 
+  currentUser, 
+  users, 
+  addUser, 
+  updateUser, 
+  deleteUser 
+}) => {
   const [showModal, setShowModal] = useState(false);
   const [modalTab, setModalTab] = useState<'Dados' | 'Cobranca' | 'Decisores' | 'CRM' | 'Historico' | 'Acesso'>('Dados');
   const [searchTerm, setSearchTerm] = useState('');
@@ -142,19 +160,14 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ activeCompany, clients, s
 
   const handleSaveClient = async () => {
     try {
-      let clientToSave: Client;
       if (selectedClientId) {
-        clientToSave = { ...formData as Client, id: selectedClientId };
+        updateClient({ ...formData as Client, id: selectedClientId });
       } else {
-        clientToSave = {
+        addClient({
           ...formData as Client,
-          id: Math.random().toString(36).substr(2, 5).toUpperCase(),
           ownerId: activeCompany === 'GLOBAL' ? 'LOG' : activeCompany
-        };
+        });
       }
-
-      // Save client to Firestore
-      await setDoc(doc(db, 'clients', clientToSave.id), clientToSave);
 
       setShowModal(false);
       resetForm();
@@ -195,10 +208,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ activeCompany, clients, s
         customerId: selectedClientId,
         isFirstLogin: true
       };
-      await setDoc(doc(db, 'users', userEmail), newUser);
-      
-      // Update local state
-      setUsers(prev => [...prev, newUser]);
+      addUser(newUser);
       
       setUserEmail('');
       setUserPassword('');
@@ -216,22 +226,13 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ activeCompany, clients, s
 
   const handleDeleteUser = async (email: string) => {
     if (window.confirm(`Excluir acesso do usuário ${email}?`)) {
-      try {
-        await deleteDoc(doc(db, 'users', email));
-        setUsers(prev => prev.filter(u => u.email !== email));
-      } catch (error) {
-        console.error("Error deleting user:", error);
-      }
+      deleteUser(email);
     }
   };
 
   const handleDeleteClient = async (id: string) => {
     if (window.confirm('Excluir cliente?')) {
-      try {
-        await deleteDoc(doc(db, 'clients', id));
-      } catch (error) {
-        console.error("Error deleting client:", error);
-      }
+      deleteClient(id);
     }
   };
 
@@ -351,7 +352,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({ activeCompany, clients, s
                         <button onClick={() => { setSelectedClientId(client.id); setFormData(client); setShowModal(true); setOpenMenuId(null); }} className="w-full px-6 py-4 flex items-center gap-3 text-left hover:bg-gray-50 transition-colors group">
                           <Edit2 size={16} className="text-gray-400 group-hover:text-bordeaux" /><span className="text-xs font-black uppercase text-gray-600 tracking-widest">Editar Cadastro</span>
                         </button>
-                        <button onClick={() => { setClients(clients.map(c => c.id === client.id ? {...c, status: c.status === 'Inativo' ? 'Ativo' : 'Inativo'} : c)); setOpenMenuId(null); }} className="w-full px-6 py-4 flex items-center gap-3 text-left hover:bg-gray-50 transition-colors group">
+                        <button onClick={() => { updateClient({...client, status: client.status === 'Inativo' ? 'Ativo' : 'Inativo'}); setOpenMenuId(null); }} className="w-full px-6 py-4 flex items-center gap-3 text-left hover:bg-gray-50 transition-colors group">
                           {client.status === 'Inativo' ? <><Unlock size={16} className="text-emerald-500" /><span className="text-xs font-black uppercase text-emerald-600 tracking-widest">Ativar</span></> : <><Lock size={16} className="text-red-500" /><span className="text-xs font-black uppercase text-red-600 tracking-widest">Inativar</span></>}
                         </button>
                         <div className="h-[1px] bg-gray-100 w-full"></div>

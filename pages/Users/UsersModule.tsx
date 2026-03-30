@@ -10,11 +10,14 @@ import firebaseConfig from '../../firebase-applet-config.json';
 
 interface UsersModuleProps {
   users: UserType[];
-  setUsers: React.Dispatch<React.SetStateAction<UserType[]>>;
+  addUser: (newUser: UserType) => void;
+  updateUser: (updatedUser: UserType) => void;
+  deleteUser: (userEmail: string) => void;
   clients: Client[];
+  currentUser: UserType;
 }
 
-const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers, clients }) => {
+const UsersModule: React.FC<UsersModuleProps> = ({ users, addUser, updateUser, deleteUser, clients, currentUser }) => {
   const { activeCompany, getCompanyBadge } = useCompany();
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
@@ -63,14 +66,13 @@ const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers, clients }) =
     console.log("Submitting form data:", formData);
     try {
       if (editingUser) {
-        const updatedUser = { ...formData, id: editingUser.id, email: formData.email.toLowerCase().trim() } as UserType;
+        const updatedUser = { ...formData, id: editingUser.id, email: formData.email?.toLowerCase().trim() } as UserType;
         if (!updatedUser.password) {
           updatedUser.password = editingUser.password;
         }
-        console.log("Updating existing user in Firestore:", updatedUser);
-        await setDoc(doc(db, 'users', updatedUser.email), updatedUser);
-        console.log("User updated in Firestore successfully.");
-        // Note: setUsers is handled by onSnapshot in App.tsx
+        console.log("Updating existing user:", updatedUser);
+        updateUser(updatedUser);
+        console.log("User update requested.");
       } else {
         if (!formData.email || !formData.password) {
           alert("E-mail e senha são obrigatórios para novos usuários.");
@@ -130,10 +132,9 @@ const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers, clients }) =
           isFirstLogin: true, // New users must change password on first login
         } as UserType;
         
-        console.log("Saving new user to Firestore:", newUser);
-        await setDoc(doc(db, 'users', newUser.email), newUser);
-        console.log("User saved to Firestore successfully.");
-        // Note: setUsers is handled by onSnapshot in App.tsx
+        console.log("Saving new user:", newUser);
+        addUser(newUser);
+        console.log("User creation requested.");
       }
       setShowModal(false);
     } catch (error: any) {
@@ -157,10 +158,9 @@ const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers, clients }) =
     try {
       const updatedStatus = user.status === 'Ativo' ? 'Inativo' : 'Ativo';
       const updatedUser = { ...user, status: updatedStatus as 'Ativo' | 'Inativo' };
-      console.log("Toggling user status in Firestore:", updatedUser.email, "to", updatedStatus);
-      await setDoc(doc(db, 'users', user.email), updatedUser);
-      console.log("User status updated in Firestore successfully.");
-      // Note: setUsers is handled by onSnapshot in App.tsx
+      console.log("Toggling user status:", updatedUser.email, "to", updatedStatus);
+      updateUser(updatedUser);
+      console.log("User status update requested.");
     } catch (error: any) {
       console.error("Error toggling user status:", error);
       alert("Erro ao alterar status do usuário: " + (error.message || "Erro desconhecido"));
@@ -169,10 +169,9 @@ const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers, clients }) =
 
   const handleDeleteUser = async (user: UserType) => {
     try {
-      console.log("Deleting user from Firestore:", user.email);
-      await deleteDoc(doc(db, 'users', user.email));
-      console.log("User deleted from Firestore successfully.");
-      // Note: setUsers is handled by onSnapshot in App.tsx
+      console.log("Deleting user:", user.email);
+      deleteUser(user.email);
+      console.log("User deletion requested.");
       setUserToDelete(null);
     } catch (error: any) {
       console.error("Error deleting user:", error);
@@ -191,6 +190,8 @@ const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers, clients }) =
     }
   };
 
+  const canManageUsers = currentUser?.role === 'Administrador' || currentUser?.role === 'Gestor';
+
   return (
     <div className="p-8 h-full flex flex-col bg-gray-50/50">
       <div className="flex justify-between items-start mb-8">
@@ -201,13 +202,15 @@ const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers, clients }) =
           </h1>
           <p className="text-gray-500 mt-1">Gerencie os acessos e permissões do sistema.</p>
         </div>
-        <button 
-          onClick={() => handleOpenModal()}
-          className="bg-bordeaux text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-bordeaux/20 hover:bg-bordeaux/90 transition-all flex items-center gap-2"
-        >
-          <Plus size={20} />
-          Novo Usuário
-        </button>
+        {canManageUsers && (
+          <button 
+            onClick={() => handleOpenModal()}
+            className="bg-bordeaux text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-bordeaux/20 hover:bg-bordeaux/90 transition-all flex items-center gap-2"
+          >
+            <Plus size={20} />
+            Novo Usuário
+          </button>
+        )}
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex-1 flex flex-col overflow-hidden">
@@ -278,33 +281,35 @@ const UsersModule: React.FC<UsersModuleProps> = ({ users, setUsers, clients }) =
                     </span>
                   </td>
                   <td className="p-4 text-right">
-                    <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button 
-                        onClick={() => handleOpenModal(user)}
-                        className="p-2 text-gray-400 hover:text-bordeaux hover:bg-bordeaux/10 rounded-lg transition-colors"
-                        title="Editar"
-                      >
-                        <Edit2 size={18} />
-                      </button>
-                      <button 
-                        onClick={() => toggleStatus(user)}
-                        className={`p-2 rounded-lg transition-colors ${
-                          user.status === 'Ativo' 
-                            ? 'text-gray-400 hover:text-orange-600 hover:bg-orange-50' 
-                            : 'text-gray-400 hover:text-emerald-600 hover:bg-emerald-50'
-                        }`}
-                        title={user.status === 'Ativo' ? 'Desativar' : 'Ativar'}
-                      >
-                        {user.status === 'Ativo' ? <Power size={18} /> : <Power size={18} className="rotate-180" />}
-                      </button>
-                      <button 
-                        onClick={() => setUserToDelete(user)}
-                        className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                        title="Excluir"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </div>
+                    {canManageUsers && (
+                      <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button 
+                          onClick={() => handleOpenModal(user)}
+                          className="p-2 text-gray-400 hover:text-bordeaux hover:bg-bordeaux/10 rounded-lg transition-colors"
+                          title="Editar"
+                        >
+                          <Edit2 size={18} />
+                        </button>
+                        <button 
+                          onClick={() => toggleStatus(user)}
+                          className={`p-2 rounded-lg transition-colors ${
+                            user.status === 'Ativo' 
+                              ? 'text-gray-400 hover:text-orange-600 hover:bg-orange-50' 
+                              : 'text-gray-400 hover:text-emerald-600 hover:bg-emerald-50'
+                          }`}
+                          title={user.status === 'Ativo' ? 'Desativar' : 'Ativar'}
+                        >
+                          {user.status === 'Ativo' ? <Power size={18} /> : <Power size={18} className="rotate-180" />}
+                        </button>
+                        <button 
+                          onClick={() => setUserToDelete(user)}
+                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Excluir"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}

@@ -5,7 +5,9 @@ import { Transaction, DRECategory } from '../../App';
 interface CompanyValuationProps {
   transactions: Transaction[];
   dreCategories: DRECategory[];
-  setDreCategories?: React.Dispatch<React.SetStateAction<DRECategory[]>>;
+  addDreCategory: (newCategory: Omit<DRECategory, 'id'>) => void;
+  updateDreCategory: (updatedCategory: DRECategory) => void;
+  deleteDreCategory: (categoryId: string) => void;
 }
 
 const formatCurrency = (val: number) => 
@@ -14,23 +16,16 @@ const formatCurrency = (val: number) =>
 const formatPercent = (val: number) => 
   val.toLocaleString('pt-BR', { style: 'percent', minimumFractionDigits: 1 });
 
-const mockHistoricalData: Record<string, Record<number, number>> = {
-  '1': { 2021: 5000000, 2022: 6000000, 2023: 8000000, 2024: 10000000, 2025: 12000000 },
-  '2': { 2021: 7000000, 2022: 9000000, 2023: 10500000, 2024: 12000000, 2025: 14500000 },
-  '9': { 2021: 1800000, 2022: 2250000, 2023: 2775000, 2024: 3300000, 2025: 3975000 },
-  '4': { 2021: 2000000, 2022: 2500000, 2023: 3000000, 2024: 3500000, 2025: 4000000 },
-  '6': { 2021: 3000000, 2022: 4000000, 2023: 5000000, 2024: 6000000, 2025: 7000000 },
-  '7': { 2021: 1000000, 2022: 1000000, 2023: 1000000, 2024: 1000000, 2025: 1500000 },
-  '8': { 2021: 2000000, 2022: 2400000, 2023: 2900000, 2024: 3500000, 2025: 4200000 },
-  '11': { 2021: 200000, 2022: 250000, 2023: 300000, 2024: 350000, 2025: 400000 },
-  '13': { 2021: -150000, 2022: -180000, 2023: -200000, 2024: -250000, 2025: -300000 },
-  '12': { 2021: 629000, 2022: 822800, 2023: 1130500, 2024: 1394000, 2025: 1742500 },
-};
-
 const years = [2021, 2022, 2023, 2024, 2025, 2026];
 
-const CompanyValuation: React.FC<CompanyValuationProps> = ({ transactions, dreCategories, setDreCategories }) => {
-  const [historicalData, setHistoricalData] = useState<Record<string, Record<number, number>>>(mockHistoricalData);
+const CompanyValuation: React.FC<CompanyValuationProps> = ({ 
+  transactions, 
+  dreCategories, 
+  addDreCategory, 
+  updateDreCategory, 
+  deleteDreCategory 
+}) => {
+  const [historicalData, setHistoricalData] = useState<Record<string, Record<number, number>>>({});
   const [isEditing, setIsEditing] = useState(false);
   const [ebitdaMultiple, setEbitdaMultiple] = useState<number>(6.5);
   const [revenueMultiple, setRevenueMultiple] = useState<number>(1.2);
@@ -62,24 +57,22 @@ const CompanyValuation: React.FC<CompanyValuationProps> = ({ transactions, dreCa
   };
 
   const handleNameChange = (categoryId: string, newName: string) => {
-    if (setDreCategories) {
-      setDreCategories(prev => prev.map(c => c.id === categoryId ? { ...c, name: newName } : c));
+    const category = dreCategories.find(c => c.id === categoryId);
+    if (category) {
+      updateDreCategory({ ...category, name: newName });
     }
   };
 
   const handleAddCategory = () => {
-    if (newCategoryName && newCategoryGroup && setDreCategories) {
-      const newId = Math.random().toString(36).substr(2, 9);
-      setDreCategories(prev => [...prev, { id: newId, name: newCategoryName, group: newCategoryGroup }]);
+    if (newCategoryName && newCategoryGroup) {
+      addDreCategory({ name: newCategoryName, group: newCategoryGroup });
       setNewCategoryName('');
       setNewCategoryGroup('');
     }
   };
 
   const handleDeleteCategory = (categoryId: string) => {
-    if (setDreCategories) {
-      setDreCategories(prev => prev.filter(c => c.id !== categoryId));
-    }
+    deleteDreCategory(categoryId);
   };
 
   // DRE Structure Calculation

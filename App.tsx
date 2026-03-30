@@ -24,7 +24,7 @@ import {
   ChevronLeft
 } from 'lucide-react';
 import { onAuthStateChanged, signOut, signInWithEmailAndPassword, updatePassword, createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, getDoc, setDoc, onSnapshot, collection, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, onSnapshot, collection, updateDoc, deleteDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import DashboardModule from './components/DashboardModule';
 import CommercialModule from './pages/Commercial/CommercialModule';
@@ -79,12 +79,13 @@ export enum Module {
 
 export interface PricingConfig {
   id: string;
-  ownerId: 'BD' | 'LOG';
+  ownerId: 'BD' | 'LOG' | 'GLOBAL';
   federalTaxes: number;
   icms: number;
   directCost: number;
   expenses: number;
   minProfit: number;
+  insurancePercentage: number;
 }
 
 export interface CteRecord {
@@ -225,11 +226,14 @@ export interface RouteConfig {
 }
 
 export type LoadStatus = 
+  | 'PROSPECTO'
+  | 'PROPOSTA_APRESENTADA'
   | 'NEGOCIACAO' 
   | 'DOCUMENTACAO' 
   | 'PRONTO_PROGRAMAR' 
   | 'AGUARDANDO PROGRAMAÇÃO' 
   | 'AGUARDANDO EMISSÃO'
+  | 'EM_PROGRAMACAO'
   | 'EM TRÂNSITO' 
   | 'ENTREGUE'
   | 'Cancelado'
@@ -255,6 +259,7 @@ export interface Load {
   id: string;
   ownerId: 'BD' | 'LOG';
   date: string;
+  collectionDate?: string;
   customer: string;
   origin: string;
   destination: string;
@@ -278,6 +283,24 @@ export interface Load {
   originAddress?: string;
   destinationAddress?: string;
   commercialNotes?: string;
+  // Precificação
+  programmingNumber?: string;
+  freightAgreed?: number;
+  freightConditions?: 'frete+icms+seguro' | 'frete+icms' | 'frete+seguro';
+  merchandiseValue?: number;
+  icmsValue?: number;
+  issqnValue?: number;
+  tollValue?: number;
+  insuranceValue?: number;
+  clientRecoversICMS?: boolean;
+  icmsDeferred?: boolean;
+  noInsurance?: boolean;
+  driverCost?: number;
+  provisionalDriverCost?: number;
+  effectiveDriverCost?: number;
+  isDriverCostEffective?: boolean;
+  capturingCommercialUserId?: string;
+  //
   targetDriverFreight?: number;
   otherCosts?: number;
   taxesRetained?: number;
@@ -289,11 +312,14 @@ export interface Load {
   contractUrl?: string;
   manifestUrl?: string;
   invoiceUrl?: string;
+  nfUrl?: string;
   otherDocsUrl?: string;
   gnreUrl?: string;
   boletoUrl?: string;
   messages?: LoadMessage[];
   trackingHistory?: TrackingUpdate[];
+  proposalNumber?: string;
+  internalNumber?: string;
 }
 
 export interface BankAccount {
@@ -327,6 +353,8 @@ export interface Transaction {
   orderIndex?: number;
 }
 
+import UserSwitcher from './components/UserSwitcher';
+
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAuthReady, setIsAuthReady] = useState(false);
@@ -338,176 +366,25 @@ const App: React.FC = () => {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
 
   // Estados com ownerId definido
-  const [vehicleTypes, setVehicleTypes] = useState<VehicleType[]>([
-    { id: '1', name: 'Carreta LS (Lonada)', capacity: 32, volume: 90, active: true },
-    { id: '2', name: 'Truck', capacity: 14, volume: 45, active: true },
-  ]);
+  const [vehicleTypes, setVehicleTypes] = useState<VehicleType[]>([]);
 
-  const [drivers, setDrivers] = useState<Driver[]>([
-    { 
-      id: 'D1', ownerId: 'BD', name: 'João Silva (BD)', type: 'PF', cnpj_cpf: '111.222.333-44', phone: '(11) 98888-7777', 
-      vehicleType: 'Truck', plate: 'ABC-1234', antt: '12345678', rating: 4.8, completedTrips: 152, 
-      status: 'Disponível', city: 'São Paulo', state: 'SP', historyRoutes: [], pix: '11122233344'
-    },
-    { 
-      id: 'D2', ownerId: 'LOG', name: 'Carlos Souza (LOG)', type: 'PJ', cnpj_cpf: '12.345.678/0001-90', phone: '(21) 97777-6666', 
-      vehicleType: 'Carreta LS', plate: 'XYZ-5678', antt: '87654321', rating: 4.5, completedTrips: 89, 
-      status: 'Disponível', city: 'Curitiba', state: 'PR', historyRoutes: [], pix: 'comercial@transsouza.com'
-    }
-  ]);
+  const [drivers, setDrivers] = useState<Driver[]>([]);
 
   const [clients, setClients] = useState<Client[]>([]);
   const [users, setUsers] = useState<User[]>([]);
-  const [ctes, setCtes] = useState<CteRecord[]>([
-    {
-      id: 'CTE1', loadId: 'L1', cteNumber: '1001', emissionDate: '2026-03-11', cteValue: 15000.00,
-      customer: 'Vale S.A.', origin: 'Belo Horizonte/MG', destination: 'Vitória/ES',
-      driverFreight: 10000.00, advanceValue: 6000.00, advanceDate: '2026-03-11',
-      balanceValue: 4000.00, balanceDate: '2026-03-15', driverName: 'João Silva',
-      driverCpf: '111.222.333-44', extraValue: 0, extraReference: '', tollValue: 250,
-      taxesRetained: 150, status: 'ATIVO', financeConfirmed: true, financeRejected: false
-    },
-    {
-      id: 'CTE2', loadId: 'L2', cteNumber: '1002', emissionDate: '2026-03-20', cteValue: 8000.00,
-      customer: 'Ambev', origin: 'Agudos/SP', destination: 'Rio de Janeiro/RJ',
-      driverFreight: 5500.00, advanceValue: 3000.00, advanceDate: '2026-03-20',
-      balanceValue: 2500.00, balanceDate: '2026-03-25', driverName: 'Carlos Souza',
-      driverCpf: '555.666.777-88', extraValue: 100, extraReference: 'Descarga', tollValue: 180,
-      taxesRetained: 80, status: 'ATIVO', financeConfirmed: false, financeRejected: false
-    },
-    {
-      id: 'CTE3', loadId: 'L5', cteNumber: '1003', emissionDate: '2026-03-21', cteValue: 7500.00,
-      customer: 'Ambev', origin: 'Jaguariúna/SP', destination: 'Belo Horizonte/MG',
-      driverFreight: 5000.00, advanceValue: 2500.00, advanceDate: '2026-03-21',
-      balanceValue: 2500.00, balanceDate: '2026-03-26', driverName: 'Fernando Costa',
-      driverCpf: '999.000.111-22', extraValue: 0, extraReference: '', tollValue: 120,
-      taxesRetained: 75, status: 'CANCELADO', financeConfirmed: false, financeRejected: false
-    }
-  ]);
+  const [ctes, setCtes] = useState<CteRecord[]>([]);
 
-  const [commercialGoals, setCommercialGoals] = useState<CommercialGoal[]>([
-    { id: 'G1', userId: 'Ana Beatriz', month: '03', year: '2026', salesGoal: 50000, prospectingGoal: 10 }
-  ]);
+  const [commercialGoals, setCommercialGoals] = useState<CommercialGoal[]>([]);
 
-  const [commissionRules, setCommissionRules] = useState<CommissionRule[]>([
-    { id: 'CR1', role: 'Comercial', type: 'Comissao_Faturamento', minRevenue: 0, maxRevenue: 50000, commissionPercentage: 2 },
-    { id: 'CR2', role: 'Comercial', type: 'Comissao_Faturamento', minRevenue: 50001, maxRevenue: 9999999, commissionPercentage: 3 },
-    { id: 'CR3', role: 'Comercial', type: 'Meta_Extra', targetRevenue: 100000, maxCostPercentage: 60, bonusAmount: 1000 },
-    { id: 'CR4', role: 'Operacional', type: 'Meta_Extra', maxCostPercentage: 58, bonusAmount: 1500 }
-  ]);
+  const [commissionRules, setCommissionRules] = useState<CommissionRule[]>([]);
 
   const [pricingConfigs, setPricingConfigs] = useState<PricingConfig[]>([]);
-  const [clientTypes, setClientTypes] = useState<string[]>(['Indústria', 'Embarcador', 'Distribuidor']);
-  const [segments, setSegments] = useState<string[]>(['Agronegócio', 'Indústria', 'Químico e Petroquímico']);
-  const [loads, setLoads] = useState<Load[]>([
-    { 
-      id: 'L1', ownerId: 'BD', date: '2026-03-10', customer: 'Vale S.A.', origin: 'Belo Horizonte/MG', 
-      destination: 'Vitória/ES', value: 15000, cost: 10000, status: 'ENTREGUE', 
-      loadType: 'Dedicada', vehicleTypeRequired: 'Carreta LS', commercialRep: 'Ana Beatriz',
-      assignedProgrammer: 'Marcos Oliveira', merchandise: 'Minério', weight: 32000,
-      driverId: 'D1', driver: 'João Silva', plate: 'ABC-1234', advance: 6000, balance: 4000,
-      cteNumber: '1001'
-    },
-    { 
-      id: 'L2', ownerId: 'LOG', date: '2026-03-20', customer: 'Ambev', origin: 'Agudos/SP', 
-      destination: 'Rio de Janeiro/RJ', value: 8000, cost: 5500, status: 'EM TRÂNSITO', 
-      loadType: 'Dedicada', vehicleTypeRequired: 'Sider', commercialRep: 'Ana Beatriz',
-      assignedProgrammer: 'Marcos Oliveira', merchandise: 'Bebidas', weight: 25000,
-      driverId: 'D2', driver: 'Carlos Souza', plate: 'XYZ-9876', advance: 3000, balance: 2500,
-      cteNumber: '1002'
-    },
-    { 
-      id: 'L3', ownerId: 'LOG', date: '2026-03-22', customer: 'Gerdau', origin: 'Ouro Branco/MG', 
-      destination: 'São Paulo/SP', value: 12000, cost: 8500, status: 'AGUARDANDO EMISSÃO', 
-      loadType: 'Dedicada', vehicleTypeRequired: 'Carreta', commercialRep: 'Marcos Oliveira',
-      assignedProgrammer: 'Marcos Oliveira', merchandise: 'Aço', weight: 30000,
-      driverId: 'D3', driver: 'Roberto Alves', plate: 'DEF-5678', advance: 5000, balance: 3500
-    },
-    { 
-      id: 'L4', ownerId: 'BD', date: '2026-03-23', customer: 'Vale S.A.', origin: 'Mariana/MG', 
-      destination: 'Tubarão/ES', value: 16000, cost: 11000, status: 'AGUARDANDO PROGRAMAÇÃO', 
-      loadType: 'Dedicada', vehicleTypeRequired: 'Carreta LS', commercialRep: 'Ana Beatriz',
-      merchandise: 'Minério', weight: 32000
-    },
-    { 
-      id: 'L5', ownerId: 'LOG', date: '2026-03-21', customer: 'Ambev', origin: 'Jaguariúna/SP', 
-      destination: 'Belo Horizonte/MG', value: 7500, cost: 5000, status: 'Cancelado', 
-      loadType: 'Dedicada', vehicleTypeRequired: 'Sider', commercialRep: 'Ana Beatriz',
-      assignedProgrammer: 'Marcos Oliveira', merchandise: 'Bebidas', weight: 24000,
-      driverId: 'D4', driver: 'Fernando Costa', plate: 'GHI-9012', advance: 2500, balance: 2500,
-      cteNumber: '1003'
-    },
-    { 
-      id: 'L6', ownerId: 'BD', date: '2026-03-24', customer: 'Vale S.A.', origin: 'Nova Lima/MG', 
-      destination: 'Rio de Janeiro/RJ', value: 18000, cost: 12000, status: 'EM TRÂNSITO', 
-      loadType: 'Dedicada', vehicleTypeRequired: 'Carreta LS', commercialRep: 'Ana Beatriz',
-      assignedProgrammer: 'Marcos Oliveira', merchandise: 'Minério', weight: 32000,
-      driverId: 'D5', driver: 'Antônio Carlos', plate: 'JKL-3456', advance: 7000, balance: 5000,
-      cteNumber: '1004'
-    },
-    { 
-      id: 'L7', ownerId: 'BD', date: '2026-03-23', customer: 'Vale S.A.', origin: 'Brumadinho/MG', 
-      destination: 'Santos/SP', value: 22000, cost: 15000, status: 'AGUARDANDO EMISSÃO', 
-      loadType: 'Dedicada', vehicleTypeRequired: 'Carreta LS', commercialRep: 'Ana Beatriz',
-      assignedProgrammer: 'Marcos Oliveira', merchandise: 'Minério', weight: 32000,
-      driverId: 'D6', driver: 'Paulo Mendes', plate: 'MNO-7890', advance: 8000, balance: 7000
-    },
-    { 
-      id: 'L8', ownerId: 'LOG', date: '2026-03-18', customer: 'Ambev', origin: 'Jacareí/SP', 
-      destination: 'Curitiba/PR', value: 9500, cost: 6500, status: 'ENTREGUE', 
-      loadType: 'Dedicada', vehicleTypeRequired: 'Sider', commercialRep: 'Ana Beatriz',
-      assignedProgrammer: 'Marcos Oliveira', merchandise: 'Bebidas', weight: 26000,
-      driverId: 'D7', driver: 'Ricardo Silva', plate: 'PQR-1234', advance: 3500, balance: 3000,
-      cteNumber: '1005'
-    },
-    { 
-      id: 'L9', ownerId: 'BD', date: '2026-03-15', customer: 'Vale S.A.', origin: 'Itabira/MG', 
-      destination: 'Vitória/ES', value: 14500, cost: 9500, status: 'ENTREGUE', 
-      loadType: 'Dedicada', vehicleTypeRequired: 'Carreta LS', commercialRep: 'Ana Beatriz',
-      assignedProgrammer: 'Marcos Oliveira', merchandise: 'Minério', weight: 32000,
-      driverId: 'D8', driver: 'Luiz Fernando', plate: 'STU-5678', advance: 5000, balance: 4500,
-      cteNumber: '1006'
-    }
-  ]);
-
-  const [transactions, setTransactions] = useState<Transaction[]>([
-    // Load 1 (Fully realized)
-    { id: 'T1', ownerId: 'BD', date: '2026-03-11', desc: 'Adiantamento - João Silva (Carga #L1)', type: 'SAIDA', value: 6000, cat: '5', bankAccountId: '1', cte: '1001', status: 'EFETIVADO', clientName: 'Vale S.A.', carreteiroType: 'Adiantamento' },
-    { id: 'T2', ownerId: 'BD', date: '2026-03-15', desc: 'Saldo - João Silva (Carga #L1)', type: 'SAIDA', value: 4000, cat: '5', bankAccountId: '1', cte: '1001', status: 'EFETIVADO', clientName: 'Vale S.A.', carreteiroType: 'Saldo' },
-    { id: 'T3', ownerId: 'BD', date: '2026-03-18', desc: 'Recebimento Frete CTE 1001', type: 'ENTRADA', value: 15000, cat: '1', bankAccountId: '1', cte: '1001', status: 'EFETIVADO', clientName: 'Vale S.A.' },
-    
-    // Load 2 (In Transit - Advance paid, Balance pending)
-    { id: 'T4', ownerId: 'LOG', date: '2026-03-20', desc: 'Adiantamento - Carlos Souza (Carga #L2)', type: 'SAIDA', value: 3000, cat: '5', bankAccountId: '2', cte: '1002', status: 'EFETIVADO', clientName: 'Ambev', carreteiroType: 'Adiantamento' },
-    { id: 'T5', ownerId: 'LOG', date: '2026-03-25', desc: 'Saldo - Carlos Souza (Carga #L2)', type: 'SAIDA', value: 2500, cat: '5', bankAccountId: '2', cte: '1002', status: 'PENDENTE', clientName: 'Ambev', carreteiroType: 'Saldo' },
-    { id: 'T6', ownerId: 'LOG', date: '2026-03-20', desc: 'Extra - Descarga (Carga #L2)', type: 'SAIDA', value: 100, cat: '5', bankAccountId: '2', cte: '1002', status: 'PENDENTE', clientName: 'Ambev', carreteiroType: 'Extra' },
-    { id: 'T7', ownerId: 'LOG', date: '2026-04-05', desc: 'Recebimento Frete CTE 1002', type: 'ENTRADA', value: 8000, cat: '1', bankAccountId: '2', cte: '1002', status: 'PENDENTE', clientName: 'Ambev' },
-
-    // Load 5 (Cancelled CTE - pending orders should show as cancelled in UI)
-    { id: 'T8', ownerId: 'LOG', date: '2026-03-21', desc: 'Adiantamento - Fernando Costa (Carga #L5)', type: 'SAIDA', value: 2500, cat: '5', bankAccountId: '2', cte: '1003', status: 'PENDENTE', clientName: 'Ambev', carreteiroType: 'Adiantamento' },
-    { id: 'T9', ownerId: 'LOG', date: '2026-03-26', desc: 'Saldo - Fernando Costa (Carga #L5)', type: 'SAIDA', value: 2500, cat: '5', bankAccountId: '2', cte: '1003', status: 'PENDENTE', clientName: 'Ambev', carreteiroType: 'Saldo' }
-  ]);
-
-  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([
-    { id: '1', name: 'Itaú - Conta Principal', type: 'BANCO', initialBalance: 150000 },
-    { id: '2', name: 'Caixa Interno', type: 'CAIXA', initialBalance: 5000 },
-  ]);
-
-  const [dreCategories, setDreCategories] = useState<DRECategory[]>([
-    { id: '1', name: 'Frete', group: 'RECEITA_BRUTA_CAIXA' },
-    { id: '2', name: 'PIS', group: 'TRIBUTOS' },
-    { id: '3', name: 'COFINS', group: 'TRIBUTOS' },
-    { id: '4', name: 'ICMS', group: 'TRIBUTOS' },
-    { id: '5', name: 'Carreteiro', group: 'CUSTO_DIRETO_OPERACIONAL' },
-    { id: '6', name: 'Combustível', group: 'CUSTO_DIRETO_OPERACIONAL' },
-    { id: '7', name: 'Manutenção', group: 'CUSTO_DIRETO_OPERACIONAL' },
-    { id: '8', name: 'Despesas Administrativas', group: 'DESPESAS_ADMINISTRATIVAS' },
-    { id: '9', name: 'Impostos', group: 'TRIBUTOS' },
-    { id: '10', name: 'Operacional', group: 'CUSTO_DIRETO_OPERACIONAL' },
-    { id: '11', name: 'Depreciação de Veículos', group: 'DEPRECIACAO' },
-    { id: '12', name: 'IRPJ e CSLL', group: 'IMPOSTOS_LUCRO' },
-    { id: '13', name: 'Juros e Multas', group: 'RESULTADO_FINANCEIRO' },
-    { id: '14', name: 'Receita por Competência', group: 'RECEITA_BRUTA_COMPETENCIA' },
-  ]);
+  const [clientTypes, setClientTypes] = useState<string[]>([]);
+  const [segments, setSegments] = useState<string[]>([]);
+  const [loads, setLoads] = useState<Load[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [dreCategories, setDreCategories] = useState<DRECategory[]>([]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -521,9 +398,16 @@ const App: React.FC = () => {
           const userDoc = await getDoc(doc(db, 'users', email));
           
           if (userDoc.exists()) {
-            console.log("User found in Firestore:", email);
-            setCurrentUser(userDoc.data() as User);
-            setIsAuthenticated(true);
+            const userData = userDoc.data() as User;
+            if (userData) {
+              console.log("User found in Firestore:", email, "Role:", userData.role);
+              setCurrentUser(userData);
+              setIsAuthenticated(true);
+            } else {
+              console.error("User document exists but data is null for:", email);
+              setIsAuthenticated(false);
+              setCurrentUser(null);
+            }
           } else {
             console.log("User NOT found in Firestore:", email);
             if (email === 'diegociatos@gmail.com') {
@@ -575,6 +459,32 @@ const App: React.FC = () => {
     }
   }, [currentUser]);
 
+  const handleFirestoreError = (error: any, operation: string, path: string) => {
+    const errInfo = {
+      error: error.message,
+      operation,
+      path,
+      authInfo: {
+        userId: auth.currentUser?.uid,
+        email: auth.currentUser?.email,
+        emailVerified: auth.currentUser?.emailVerified,
+        isAnonymous: auth.currentUser?.isAnonymous,
+        providerInfo: auth.currentUser?.providerData.map(p => ({
+          providerId: p.providerId,
+          displayName: p.displayName,
+          email: p.email,
+          photoUrl: p.photoURL
+        })) || []
+      }
+    };
+    console.error(`Firestore Error [${operation}] on [${path}]:`, JSON.stringify(errInfo));
+    if (error.message.includes('permission-denied')) {
+      console.warn(`Permission denied for ${operation} on ${path}. This might be expected based on user role.`);
+    } else {
+      alert(`Erro no banco de dados (${operation}): ` + error.message);
+    }
+  };
+
   // Fetch clients from Firestore
   useEffect(() => {
     if (!isAuthenticated || !currentUser) return;
@@ -584,33 +494,9 @@ const App: React.FC = () => {
       snapshot.forEach((doc) => {
         clientsData.push({ id: doc.id, ...doc.data() } as Client);
       });
-      // If empty, set defaults
-      if (clientsData.length === 0) {
-        const defaultClients: Client[] = [
-          { 
-            id: 'C1', ownerId: 'BD', name: 'Vale S.A.', cnpj: '33.592.510/0001-54', type: 'Indústria', segment: 'Mineração', 
-            city: 'Belo Horizonte', state: 'MG', commercialRep: 'Ana Beatriz', status: 'Ativo', lastNegotiation: '2026-03-01',
-            decisionMakers: [], history: [], icmsContributor: 'Sim', taxRegime: 'Lucro Real', creditLimit: 500000, paymentTerms: '30 dias'
-          },
-          { 
-            id: 'C2', ownerId: 'LOG', name: 'Ambev', cnpj: '07.526.557/0001-00', type: 'Indústria', segment: 'Bebidas', 
-            city: 'São Paulo', state: 'SP', commercialRep: 'Ana Beatriz', status: 'Ativo', lastNegotiation: '2026-03-10',
-            decisionMakers: [], history: [], icmsContributor: 'Sim', taxRegime: 'Lucro Real', creditLimit: 300000, paymentTerms: '15 dias'
-          },
-          { 
-            id: 'C3', ownerId: 'GLOBAL', name: 'Gerdau', cnpj: '33.222.111/0001-99', type: 'Indústria', segment: 'Siderurgia', 
-            city: 'Porto Alegre', state: 'RS', commercialRep: 'Marcos Oliveira', status: 'Ativo', lastNegotiation: '2026-03-15',
-            decisionMakers: [], history: [], icmsContributor: 'Sim', taxRegime: 'Lucro Real', creditLimit: 800000, paymentTerms: '45 dias'
-          }
-        ];
-        setClients(defaultClients);
-        // Save defaults to Firestore
-        defaultClients.forEach(c => setDoc(doc(db, 'clients', c.id), c));
-      } else {
-        setClients(clientsData);
-      }
+      setClients(clientsData);
     }, (error) => {
-      console.error("Error fetching clients:", error);
+      handleFirestoreError(error, 'list', 'clients');
     });
 
     return () => unsubscribe();
@@ -635,12 +521,7 @@ const App: React.FC = () => {
       console.log("Users updated from Firestore:", usersData.length, "users found.");
       setUsers(usersData);
     }, (error) => {
-      console.error("Error fetching users from Firestore:", error);
-      if (error.message.includes('permission-denied')) {
-        console.warn("Permission denied while fetching users. This is expected if you are not an admin.");
-      } else {
-        alert("Erro ao carregar lista de usuários: " + error.message);
-      }
+      handleFirestoreError(error, 'list', 'users');
     });
 
     return () => unsubscribe();
@@ -655,17 +536,135 @@ const App: React.FC = () => {
       snapshot.forEach((doc) => {
         configsData.push({ id: doc.id, ...doc.data() } as PricingConfig);
       });
-      // If empty, set defaults
-      if (configsData.length === 0) {
-        setPricingConfigs([
-          { id: 'P1', ownerId: 'BD', federalTaxes: 14.33, icms: 12, directCost: 5, expenses: 10, minProfit: 15 },
-          { id: 'P2', ownerId: 'LOG', federalTaxes: 14.33, icms: 12, directCost: 5, expenses: 10, minProfit: 15 }
-        ]);
-      } else {
-        setPricingConfigs(configsData);
+      setPricingConfigs(configsData);
+    }, (error) => {
+      handleFirestoreError(error, 'list', 'pricingConfigs');
+    });
+
+    return () => unsubscribe();
+  }, [isAuthenticated, currentUser]);
+
+  const updatePricingConfig = async (updatedConfig: PricingConfig) => {
+    try {
+      await setDoc(doc(db, 'pricingConfigs', updatedConfig.id), updatedConfig);
+      setPricingConfigs(prev => prev.map(c => c.id === updatedConfig.id ? updatedConfig : c));
+    } catch (error) {
+      handleFirestoreError(error, 'update', 'pricingConfigs');
+    }
+  };
+
+  // Fetch loads from Firestore
+  useEffect(() => {
+    if (!isAuthenticated || !currentUser) return;
+    
+    const unsubscribe = onSnapshot(collection(db, 'loads'), (snapshot) => {
+      const loadsData: Load[] = [];
+      snapshot.forEach((doc) => {
+        loadsData.push({ id: doc.id, ...doc.data() } as Load);
+      });
+      console.log("Loads updated from Firestore:", loadsData.length);
+      if (loadsData.length > 0) {
+        setLoads(loadsData);
       }
     }, (error) => {
-      console.error("Error fetching pricing configs:", error);
+      handleFirestoreError(error, 'list', 'loads');
+    });
+
+    return () => unsubscribe();
+  }, [isAuthenticated, currentUser]);
+
+  // Fetch drivers from Firestore
+  useEffect(() => {
+    if (!isAuthenticated || !currentUser) return;
+    
+    const unsubscribe = onSnapshot(collection(db, 'drivers'), (snapshot) => {
+      const driversData: Driver[] = [];
+      snapshot.forEach((doc) => {
+        driversData.push({ id: doc.id, ...doc.data() } as Driver);
+      });
+      console.log("Drivers updated from Firestore:", driversData.length);
+      if (driversData.length > 0) {
+        setDrivers(driversData);
+      }
+    }, (error) => {
+      handleFirestoreError(error, 'list', 'drivers');
+    });
+
+    return () => unsubscribe();
+  }, [isAuthenticated, currentUser]);
+
+  // Fetch transactions from Firestore
+  useEffect(() => {
+    if (!isAuthenticated || !currentUser) return;
+    
+    const unsubscribe = onSnapshot(collection(db, 'transactions'), (snapshot) => {
+      const transactionsData: Transaction[] = [];
+      snapshot.forEach((doc) => {
+        transactionsData.push({ id: doc.id, ...doc.data() } as Transaction);
+      });
+      console.log("Transactions updated from Firestore:", transactionsData.length);
+      if (transactionsData.length > 0) {
+        setTransactions(transactionsData);
+      }
+    }, (error) => {
+      handleFirestoreError(error, 'list', 'transactions');
+    });
+
+    return () => unsubscribe();
+  }, [isAuthenticated, currentUser]);
+
+  // Fetch ctes from Firestore
+  useEffect(() => {
+    if (!isAuthenticated || !currentUser) return;
+    
+    const unsubscribe = onSnapshot(collection(db, 'ctes'), (snapshot) => {
+      const ctesData: CteRecord[] = [];
+      snapshot.forEach((doc) => {
+        ctesData.push({ id: doc.id, ...doc.data() } as CteRecord);
+      });
+      if (ctesData.length > 0) {
+        setCtes(ctesData);
+      }
+    }, (error) => {
+      handleFirestoreError(error, 'list', 'ctes');
+    });
+
+    return () => unsubscribe();
+  }, [isAuthenticated, currentUser]);
+
+  // Fetch bankAccounts from Firestore
+  useEffect(() => {
+    if (!isAuthenticated || !currentUser) return;
+    
+    const unsubscribe = onSnapshot(collection(db, 'bankAccounts'), (snapshot) => {
+      const accountsData: BankAccount[] = [];
+      snapshot.forEach((doc) => {
+        accountsData.push({ id: doc.id, ...doc.data() } as BankAccount);
+      });
+      if (accountsData.length > 0) {
+        setBankAccounts(accountsData);
+      }
+    }, (error) => {
+      handleFirestoreError(error, 'list', 'bankAccounts');
+    });
+
+    return () => unsubscribe();
+  }, [isAuthenticated, currentUser]);
+
+  // Fetch dreCategories from Firestore
+  useEffect(() => {
+    if (!isAuthenticated || !currentUser) return;
+    
+    const unsubscribe = onSnapshot(collection(db, 'dreCategories'), (snapshot) => {
+      const categoriesData: DRECategory[] = [];
+      snapshot.forEach((doc) => {
+        categoriesData.push({ id: doc.id, ...doc.data() } as DRECategory);
+      });
+      if (categoriesData.length > 0) {
+        setDreCategories(categoriesData);
+      }
+    }, (error) => {
+      handleFirestoreError(error, 'list', 'dreCategories');
     });
 
     return () => unsubscribe();
@@ -726,7 +725,6 @@ const App: React.FC = () => {
       { id: Module.Transportes, icon: <Truck size={20} />, label: 'Gestão de Transportes' },
       { id: Module.Financeiro, icon: <CircleDollarSign size={20} />, label: 'Financeiro' },
       { id: Module.Usuarios, icon: <Users size={20} />, label: 'Usuários' },
-      { id: Module.Precificacao, icon: <CircleDollarSign size={20} />, label: 'Precificação' },
       { id: Module.Configuracoes, icon: <Settings size={20} />, label: 'Configurações' },
     ];
 
@@ -756,6 +754,7 @@ const App: React.FC = () => {
         case Module.Transportes:
           return isOperacional || isComercial || isCliente || isGestor;
         case Module.Financeiro:
+          return isFinanceiro || isGestor;
         case Module.Usuarios:
           return isFinanceiro || isGestor;
         case Module.Precificacao:
@@ -810,31 +809,260 @@ const App: React.FC = () => {
     }
   };
 
-  const addLoad = (newLoad: Omit<Load, 'id' | 'date' | 'ownerId'>) => {
-    const load: Load = {
-      ...newLoad,
-      id: `${Math.floor(1000 + Math.random() * 9000)}`,
-      ownerId: activeCompany === 'GLOBAL' ? 'LOG' : activeCompany, // Assume LOG se estiver em visão global ao criar
-      date: new Date().toISOString().split('T')[0],
-      status: newLoad.status || 'NEGOCIACAO',
-    };
-    setLoads([load, ...loads]);
+  const addLoad = async (newLoad: Omit<Load, 'id' | 'date' | 'ownerId'>) => {
+    try {
+      const id = `${Math.floor(1000 + Math.random() * 9000)}`;
+      const load: Load = {
+        ...newLoad,
+        id,
+        ownerId: activeCompany === 'GLOBAL' ? 'LOG' : activeCompany,
+        date: new Date().toISOString().split('T')[0],
+        status: newLoad.status || 'NEGOCIACAO',
+      };
+      await setDoc(doc(db, 'loads', id), load);
+    } catch (error) {
+      console.error("Error adding load:", error);
+      alert("Erro ao salvar carga no banco de dados.");
+    }
   };
 
-  const updateLoad = (updatedLoad: Load) => setLoads(loads.map(l => l.id === updatedLoad.id ? updatedLoad : l));
-  const deleteLoad = (loadId: string) => setLoads(loads.filter(l => l.id !== loadId));
-
-  const addTransaction = (newTransaction: Omit<Transaction, 'id' | 'ownerId'>, specificOwnerId?: 'BD' | 'LOG') => {
-    const transaction: Transaction = {
-      ...newTransaction,
-      id: `${Math.floor(1000 + Math.random() * 9000)}`,
-      ownerId: specificOwnerId || (activeCompany === 'GLOBAL' ? 'LOG' : activeCompany),
-    };
-    setTransactions([transaction, ...transactions]);
+  const updateLoad = async (updatedLoad: Load) => {
+    try {
+      await setDoc(doc(db, 'loads', updatedLoad.id), updatedLoad);
+    } catch (error) {
+      console.error("Error updating load:", error);
+      alert("Erro ao atualizar carga no banco de dados.");
+    }
   };
 
-  const updateTransaction = (updatedTransaction: Transaction) => {
-    setTransactions(prev => prev.map(t => t.id === updatedTransaction.id ? updatedTransaction : t));
+  const deleteLoad = async (loadId: string) => {
+    if (window.confirm('Excluir carga permanentemente?')) {
+      try {
+        await deleteDoc(doc(db, 'loads', loadId));
+      } catch (error) {
+        console.error("Error deleting load:", error);
+        alert("Erro ao excluir carga.");
+      }
+    }
+  };
+
+  const addTransaction = async (newTransaction: Omit<Transaction, 'id' | 'ownerId'>, specificOwnerId?: 'BD' | 'LOG') => {
+    try {
+      const id = `${Math.floor(1000 + Math.random() * 9000)}`;
+      const transaction: Transaction = {
+        ...newTransaction,
+        id,
+        ownerId: specificOwnerId || (activeCompany === 'GLOBAL' ? 'LOG' : activeCompany),
+      };
+      await setDoc(doc(db, 'transactions', id), transaction);
+    } catch (error) {
+      console.error("Error adding transaction:", error);
+    }
+  };
+
+  const updateTransaction = async (updatedTransaction: Transaction) => {
+    try {
+      await setDoc(doc(db, 'transactions', updatedTransaction.id), updatedTransaction);
+    } catch (error) {
+      console.error("Error updating transaction:", error);
+    }
+  };
+
+  const addDriver = async (newDriver: Omit<Driver, 'id' | 'ownerId'>) => {
+    try {
+      const id = `D${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
+      const driver: Driver = {
+        ...newDriver,
+        id,
+        ownerId: activeCompany === 'GLOBAL' ? 'LOG' : activeCompany
+      } as Driver;
+      await setDoc(doc(db, 'drivers', id), driver);
+    } catch (error) {
+      console.error("Error adding driver:", error);
+      alert("Erro ao salvar motorista.");
+    }
+  };
+
+  const updateDriver = async (updatedDriver: Driver) => {
+    try {
+      await setDoc(doc(db, 'drivers', updatedDriver.id), updatedDriver);
+    } catch (error) {
+      console.error("Error updating driver:", error);
+    }
+  };
+
+  const deleteDriver = async (driverId: string) => {
+    if (window.confirm('Excluir motorista permanentemente?')) {
+      try {
+        await deleteDoc(doc(db, 'drivers', driverId));
+      } catch (error) {
+        console.error("Error deleting driver:", error);
+      }
+    }
+  };
+
+  const addCte = async (newCte: Omit<CteRecord, 'id'>) => {
+    try {
+      const id = `CTE${Math.floor(1000 + Math.random() * 9000)}`;
+      await setDoc(doc(db, 'ctes', id), { ...newCte, id });
+    } catch (error) {
+      console.error("Error adding CTE:", error);
+    }
+  };
+
+  const updateCte = async (updatedCte: CteRecord) => {
+    try {
+      await setDoc(doc(db, 'ctes', updatedCte.id), updatedCte);
+    } catch (error) {
+      console.error("Error updating CTE:", error);
+    }
+  };
+
+  const deleteCte = async (cteId: string) => {
+    try {
+      await deleteDoc(doc(db, 'ctes', cteId));
+    } catch (error) {
+      console.error("Error deleting CTE:", error);
+    }
+  };
+
+  const addDreCategory = async (newCategory: Omit<DRECategory, 'id'>) => {
+    try {
+      const id = `CAT${Math.floor(1000 + Math.random() * 9000)}`;
+      await setDoc(doc(db, 'dreCategories', id), { ...newCategory, id });
+    } catch (error) {
+      console.error("Error adding DRE category:", error);
+    }
+  };
+
+  const updateDreCategory = async (updatedCategory: DRECategory) => {
+    try {
+      await setDoc(doc(db, 'dreCategories', updatedCategory.id), updatedCategory);
+    } catch (error) {
+      console.error("Error updating DRE category:", error);
+    }
+  };
+
+  const deleteDreCategory = async (categoryId: string) => {
+    try {
+      await deleteDoc(doc(db, 'dreCategories', categoryId));
+    } catch (error) {
+      console.error("Error deleting DRE category:", error);
+    }
+  };
+
+  const addClient = async (newClient: Omit<Client, 'id'>) => {
+    try {
+      const id = `C${Math.floor(1000 + Math.random() * 9000)}`;
+      await setDoc(doc(db, 'clients', id), { ...newClient, id });
+    } catch (error) {
+      console.error("Error adding client:", error);
+    }
+  };
+
+  const updateClient = async (updatedClient: Client) => {
+    try {
+      await setDoc(doc(db, 'clients', updatedClient.id), updatedClient);
+    } catch (error) {
+      console.error("Error updating client:", error);
+    }
+  };
+
+  const deleteClient = async (clientId: string) => {
+    try {
+      await deleteDoc(doc(db, 'clients', clientId));
+    } catch (error) {
+      console.error("Error deleting client:", error);
+    }
+  };
+
+  const addUser = async (newUser: User) => {
+    try {
+      await setDoc(doc(db, 'users', newUser.email), newUser);
+    } catch (error) {
+      console.error("Error adding user:", error);
+    }
+  };
+
+  const updateUser = async (updatedUser: User) => {
+    try {
+      await setDoc(doc(db, 'users', updatedUser.email), updatedUser);
+    } catch (error) {
+      console.error("Error updating user:", error);
+    }
+  };
+
+  const deleteUser = async (userEmail: string) => {
+    try {
+      await deleteDoc(doc(db, 'users', userEmail));
+    } catch (error) {
+      console.error("Error deleting user:", error);
+    }
+  };
+
+  const updateVehicleType = async (updatedType: VehicleType) => {
+    try {
+      await setDoc(doc(db, 'vehicleTypes', updatedType.id), updatedType);
+    } catch (error) {
+      console.error("Error updating vehicle type:", error);
+    }
+  };
+
+  const addBankAccount = async (newAccount: Omit<BankAccount, 'id'>) => {
+    try {
+      const id = `BANK${Math.floor(1000 + Math.random() * 9000)}`;
+      await setDoc(doc(db, 'bankAccounts', id), { ...newAccount, id });
+    } catch (error) {
+      console.error("Error adding bank account:", error);
+    }
+  };
+
+  const updateBankAccount = async (updatedAccount: BankAccount) => {
+    try {
+      await setDoc(doc(db, 'bankAccounts', updatedAccount.id), updatedAccount);
+    } catch (error) {
+      console.error("Error updating bank account:", error);
+    }
+  };
+
+  const deleteBankAccount = async (accountId: string) => {
+    try {
+      await deleteDoc(doc(db, 'bankAccounts', accountId));
+    } catch (error) {
+      console.error("Error deleting bank account:", error);
+    }
+  };
+
+  const updateCommercialGoal = async (updatedGoal: CommercialGoal) => {
+    try {
+      await setDoc(doc(db, 'commercialGoals', updatedGoal.id), updatedGoal);
+    } catch (error) {
+      console.error("Error updating commercial goal:", error);
+    }
+  };
+
+  const updateCommissionRule = async (updatedRule: CommissionRule) => {
+    try {
+      await setDoc(doc(db, 'commissionRules', updatedRule.id), updatedRule);
+    } catch (error) {
+      console.error("Error updating commission rule:", error);
+    }
+  };
+
+  const updateSegments = async (newSegments: string[]) => {
+    try {
+      await setDoc(doc(db, 'settings', 'segments'), { values: newSegments });
+    } catch (error) {
+      console.error("Error updating segments:", error);
+    }
+  };
+
+  const updateClientTypes = async (newTypes: string[]) => {
+    try {
+      await setDoc(doc(db, 'settings', 'clientTypes'), { values: newTypes });
+    } catch (error) {
+      console.error("Error updating client types:", error);
+    }
   };
 
   const renderContent = () => {
@@ -865,29 +1093,42 @@ const App: React.FC = () => {
         }
         return <DashboardModule unit={activeCompany} loads={filteredLoads} clients={filteredClients} drivers={filteredDrivers} transactions={filteredTransactions} users={users} dreCategories={dreCategories} ctes={ctes} currentUser={currentUser} commissionRules={commissionRules} />;
       case Module.Comercial:
-        return <CommercialModule loads={filteredLoads} addLoad={addLoad} updateLoad={updateLoad} deleteLoad={deleteLoad} clients={filteredClients} drivers={filteredDrivers} goToProgramming={() => setActiveModule(Module.Programacao)} pricingConfigs={pricingConfigs} />;
+        return <CommercialModule loads={filteredLoads} addLoad={addLoad} updateLoad={updateLoad} deleteLoad={deleteLoad} clients={filteredClients} drivers={filteredDrivers} goToProgramming={() => setActiveModule(Module.Programacao)} goToClients={() => setActiveModule(Module.Clientes)} pricingConfigs={pricingConfigs} users={users} currentUser={currentUser!} />;
       case Module.Clientes:
         return <ClientsModule 
           activeCompany={activeCompany}
           clients={filteredClients} 
-          setClients={setClients} 
+          addClient={addClient}
+          updateClient={updateClient}
+          deleteClient={deleteClient}
           segments={segments} 
           clientTypes={clientTypes}
           loads={filteredLoads} 
           currentUser={currentUser} 
           users={users}
-          setUsers={setUsers}
+          addUser={addUser}
+          updateUser={updateUser}
+          deleteUser={deleteUser}
         />;
       case Module.Motoristas:
         return <DriversModule 
           activeCompany={activeCompany}
           drivers={filteredDrivers} 
-          setDrivers={setDrivers} 
+          addDriver={addDriver}
+          updateDriver={updateDriver}
+          deleteDriver={deleteDriver}
           vehicleTypes={vehicleTypes} 
           currentUser={currentUser} 
         />;
       case Module.Programacao:
-        return <ProgrammingModule loads={filteredLoads} updateLoad={updateLoad} drivers={filteredDrivers} addTransaction={addTransaction} currentUser={currentUser} />;
+        return <ProgrammingModule 
+          loads={filteredLoads} 
+          updateLoad={updateLoad} 
+          drivers={filteredDrivers} 
+          addDriver={addDriver}
+          addTransaction={addTransaction} 
+          currentUser={currentUser} 
+        />;
       case Module.Financeiro:
         return <FinanceModule 
           unit={activeCompany} 
@@ -903,119 +1144,178 @@ const App: React.FC = () => {
           currentUser={currentUser}
         />;
       case Module.GestaoCTE:
-        return <CteModule ctes={ctes} setCtes={setCtes} currentUser={currentUser} />;
+        return <CteModule 
+          ctes={ctes} 
+          addCte={addCte}
+          updateCte={updateCte}
+          deleteCte={deleteCte}
+          currentUser={currentUser} 
+        />;
       case Module.Transportes:
         return <TransportManagementModule loads={filteredLoads} updateLoad={updateLoad} currentUser={currentUser} />;
       case Module.EmissaoCTE:
-        return <CteEmissionModule loads={filteredLoads} updateLoad={updateLoad} currentUser={currentUser} ctes={ctes} setCtes={setCtes} />;
+        return <CteEmissionModule 
+          loads={filteredLoads} 
+          updateLoad={updateLoad} 
+          currentUser={currentUser} 
+          ctes={ctes} 
+          addCte={addCte} 
+        />;
       case Module.Usuarios:
-        return <UsersModule users={users} setUsers={setUsers} clients={clients} />;
+        return <UsersModule 
+          users={users} 
+          addUser={addUser}
+          updateUser={updateUser}
+          deleteUser={deleteUser}
+          clients={clients}
+          currentUser={currentUser}
+        />;
       case Module.Precificacao:
-        return <PricingModule pricingConfigs={pricingConfigs} setPricingConfigs={setPricingConfigs} currentUser={currentUser} />;
+        return <PricingModule 
+          pricingConfigs={pricingConfigs} 
+          updatePricingConfig={updatePricingConfig} 
+          currentUser={currentUser} 
+        />;
       case Module.Configuracoes:
         return <SettingsModule 
           vehicleTypes={vehicleTypes} 
-          setVehicleTypes={setVehicleTypes} 
+          updateVehicleType={updateVehicleType} 
           bankAccounts={bankAccounts}
-          setBankAccounts={setBankAccounts}
+          addBankAccount={addBankAccount}
+          updateBankAccount={updateBankAccount}
+          deleteBankAccount={deleteBankAccount}
           dreCategories={dreCategories}
-          setDreCategories={setDreCategories}
+          addDreCategory={addDreCategory}
+          updateDreCategory={updateDreCategory}
+          deleteDreCategory={deleteDreCategory}
           users={users}
           commercialGoals={commercialGoals}
-          setCommercialGoals={setCommercialGoals}
+          updateCommercialGoal={updateCommercialGoal}
           commissionRules={commissionRules}
-          setCommissionRules={setCommissionRules}
+          updateCommissionRule={updateCommissionRule}
           segments={segments}
-          setSegments={setSegments}
+          updateSegments={updateSegments}
           clientTypes={clientTypes}
-          setClientTypes={setClientTypes}
+          updateClientTypes={updateClientTypes}
+          pricingConfigs={pricingConfigs}
+          updatePricingConfig={updatePricingConfig}
         />;
       default:
         return <div className="p-10 text-center italic text-gray-400">Módulo em desenvolvimento...</div>;
     }
   };
 
+  const handleSwitchUser = async (user: User) => {
+    console.log("Switching to user (Dev Mode):", user.email);
+    try {
+      // Try to sign in with the default password
+      const password = user.password || '123456';
+      await signInWithEmailAndPassword(auth, user.email, password);
+      console.log("Successfully signed in as:", user.email);
+    } catch (error: any) {
+      console.error("Error switching user via Auth:", error);
+      
+      // If user doesn't exist, try to create them (Dev Mode convenience)
+      if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
+        try {
+          console.log("Attempting to create user in Auth for Dev Mode...");
+          await createUserWithEmailAndPassword(auth, user.email, user.password || '123456');
+          console.log("Successfully created and signed in as:", user.email);
+        } catch (createError: any) {
+          console.error("Failed to create user in Auth:", createError);
+          alert("Falha ao criar usuário de teste no Auth: " + createError.message);
+        }
+      } else {
+        alert("Falha ao trocar usuário no Auth: " + error.message);
+      }
+    }
+  };
+
   if (!isAuthReady) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="w-12 h-12 border-4 border-bordeaux border-t-transparent rounded-full animate-spin"></div>
-      </div>
+      <>
+        <div className="min-h-screen flex items-center justify-center bg-gray-50">
+          <div className="w-12 h-12 border-4 border-bordeaux border-t-transparent rounded-full animate-spin"></div>
+        </div>
+        <UserSwitcher currentUser={currentUser} onSwitch={handleSwitchUser} />
+      </>
     );
   }
 
   if (!isAuthenticated || !currentUser) {
-    return <Login onLogin={async (emailInput, password) => {
-      const email = emailInput?.toLowerCase().trim();
-      console.log("Attempting login for:", email);
-      if (email && password) {
-        try {
-          console.log("Calling signInWithEmailAndPassword...");
-          await signInWithEmailAndPassword(auth, email, password);
-          console.log("Login successful for:", email);
-        } catch (error: any) {
-          console.error("Login error:", error);
-          
-          const authErrorCodes = [
-            'auth/user-not-found',
-            'auth/wrong-password',
-            'auth/invalid-credential',
-            'auth/invalid-email',
-            'auth/user-disabled'
-          ];
-
-          // Migration logic: if user not in Auth but in Firestore
-          if (authErrorCodes.includes(error.code)) {
-            console.log("Auth error caught, checking Firestore for migration/mismatch...");
+    return (
+      <>
+        <Login onLogin={async (emailInput, password) => {
+          const email = emailInput?.toLowerCase().trim();
+          console.log("Attempting login for:", email);
+          if (email && password) {
             try {
-              const userDoc = await getDoc(doc(db, 'users', email));
-              if (userDoc.exists()) {
-                const userData = userDoc.data() as any;
-                console.log("User found in Firestore, checking password...");
-                if (userData.password === password) {
-                  // Password matches Firestore! Try to create Auth user.
-                  console.log("Password matches Firestore, attempting to create Auth user...");
-                  try {
-                    await createUserWithEmailAndPassword(auth, email, password);
-                    console.log("Auth user created successfully via migration.");
-                    return;
-                  } catch (createError: any) {
-                    console.error("Error creating Auth user during migration:", createError);
-                    if (createError.code === 'auth/operation-not-allowed') {
-                      alert("O login com E-mail/Senha não está habilitado no Firebase Console. Por favor, habilite-o em Authentication > Sign-in method.");
+              console.log("Calling signInWithEmailAndPassword...");
+              await signInWithEmailAndPassword(auth, email, password);
+              console.log("Login successful for:", email);
+            } catch (error: any) {
+              console.error("Login error:", error);
+              
+              const authErrorCodes = [
+                'auth/user-not-found',
+                'auth/wrong-password',
+                'auth/invalid-credential',
+                'auth/invalid-email',
+                'auth/user-disabled'
+              ];
+
+              // Migration logic: if user not in Auth but in Firestore
+              if (authErrorCodes.includes(error.code)) {
+                console.log("Auth error caught, checking Firestore for migration/mismatch...");
+                try {
+                  const userDoc = await getDoc(doc(db, 'users', email));
+                  if (userDoc.exists()) {
+                    const userData = userDoc.data() as any;
+                    console.log("User found in Firestore, checking password...");
+                    if (userData.password === password) {
+                      // Password matches Firestore! Try to create Auth user.
+                      console.log("Password matches Firestore, attempting to create Auth user...");
+                      try {
+                        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+                        console.log("Auth user created successfully via migration:", userCredential.user.uid);
+                        // The onAuthStateChanged will handle the rest
+                      } catch (createError: any) {
+                        console.error("Error creating Auth user during migration:", createError);
+                        if (createError.code === 'auth/operation-not-allowed') {
+                          alert("O login com E-mail/Senha não está habilitado no Firebase Console. Por favor, habilite-o em Authentication > Sign-in method.");
+                        } else if (createError.code === 'auth/email-already-in-use') {
+                          // If already in use but signIn failed, then the password in Auth is different from Firestore
+                          alert("Este usuário já existe no sistema de autenticação, mas a senha fornecida não coincide. Tente uma senha anterior ou use o login com Google.");
+                        } else {
+                          alert("Erro ao criar usuário: " + createError.message);
+                        }
+                      }
+                      return;
+                    } else {
+                      console.warn("Password mismatch with Firestore.");
+                      alert("E-mail ou senha incorretos (conforme registros do sistema).");
                       return;
                     }
-                    if (createError.code === 'auth/email-already-in-use') {
-                      alert("Este usuário já existe no sistema de autenticação, mas a senha fornecida não coincide com a do serviço de autenticação. Tente uma senha anterior ou use o login com Google.");
-                      return;
-                    }
-                    throw createError;
+                  } else {
+                    console.warn("User not found in Firestore either (ID checked:", email, ")");
                   }
-                } else {
-                  console.warn("Password mismatch with Firestore.");
-                  alert("E-mail ou senha incorretos (conforme registros do sistema).");
-                  return;
+                } catch (firestoreError: any) {
+                  console.error("Migration/Firestore check error:", firestoreError);
                 }
-              } else {
-                console.warn("User not found in Firestore either (ID checked:", email, ")");
-              }
-            } catch (firestoreError: any) {
-              console.error("Migration/Firestore check error:", firestoreError);
-              if (firestoreError.code === 'auth/operation-not-allowed') {
+                alert("E-mail ou senha incorretos!");
+              } else if (error.code === 'auth/operation-not-allowed') {
                 alert("O login com E-mail/Senha não está habilitado no Firebase Console. Por favor, habilite-o em Authentication > Sign-in method.");
-                return;
+              } else if (error.code === 'auth/network-request-failed') {
+                alert("Erro de conexão: O sistema não conseguiu se comunicar com o Firebase. Verifique sua internet, desative bloqueadores de anúncios ou tente abrir em uma nova aba.");
+              } else {
+                alert("Erro ao fazer login: " + error.message);
               }
             }
-            alert("E-mail ou senha incorretos!");
-          } else if (error.code === 'auth/operation-not-allowed') {
-            alert("O login com E-mail/Senha não está habilitado no Firebase Console. Por favor, habilite-o em Authentication > Sign-in method.");
-          } else if (error.code === 'auth/network-request-failed') {
-            alert("Erro de conexão: O sistema não conseguiu se comunicar com o Firebase. Verifique sua internet, desative bloqueadores de anúncios ou tente abrir em uma nova aba.");
-          } else {
-            alert("Erro ao fazer login: " + error.message);
           }
-        }
-      }
-    }} />;
+        }} />
+        <UserSwitcher currentUser={currentUser} onSwitch={handleSwitchUser} />
+      </>
+    );
   }
 
   return (
@@ -1305,6 +1605,7 @@ const App: React.FC = () => {
           </div>
         )}
       </div>
+      <UserSwitcher currentUser={currentUser} onSwitch={handleSwitchUser} />
     </CompanyContext.Provider>
   );
 };

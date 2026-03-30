@@ -4,11 +4,13 @@ import { CteRecord, User } from '../../App';
 
 interface CteModuleProps {
   ctes: CteRecord[];
-  setCtes: React.Dispatch<React.SetStateAction<CteRecord[]>>;
+  addCte: (newCte: CteRecord) => void;
+  updateCte: (updatedCte: CteRecord) => void;
+  deleteCte: (cteId: string) => void;
   currentUser: User;
 }
 
-const CteModule: React.FC<CteModuleProps> = ({ ctes, setCtes, currentUser }) => {
+const CteModule: React.FC<CteModuleProps> = ({ ctes, addCte, updateCte, deleteCte, currentUser }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [period, setPeriod] = useState('mes');
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -187,28 +189,39 @@ const CteModule: React.FC<CteModuleProps> = ({ ctes, setCtes, currentUser }) => 
 
   const handleSave = () => {
     if (editingId) {
-      setCtes(ctes.map(c => c.id === editingId ? { 
+      const updatedCte: CteRecord = { 
         ...formData, 
         id: editingId,
         financeRejected: isAdmin && formData.financeRejected ? false : formData.financeRejected,
         financeConfirmed: isAdmin && formData.financeRejected ? false : formData.financeConfirmed
-      } : c));
+      } as CteRecord;
+      updateCte(updatedCte);
     } else {
-      setCtes([{ ...formData, id: Math.random().toString(36).substr(2, 9) }, ...ctes]);
+      const newCte: CteRecord = { ...formData, id: Math.random().toString(36).substr(2, 9) } as CteRecord;
+      addCte(newCte);
     }
     setIsFormOpen(false);
   };
 
   const handleCancelCte = (id: string) => {
-    setCtes(ctes.map(c => c.id === id ? { ...c, status: 'CANCELADO' } : c));
+    const cte = ctes.find(c => c.id === id);
+    if (cte) {
+      updateCte({ ...cte, status: 'CANCELADO' });
+    }
   };
 
   const handleConfirmFinance = (id: string) => {
-    setCtes(ctes.map(c => c.id === id ? { ...c, financeConfirmed: true, financeRejected: false } : c));
+    const cte = ctes.find(c => c.id === id);
+    if (cte) {
+      updateCte({ ...cte, financeConfirmed: true, financeRejected: false });
+    }
   };
 
   const handleRejectFinance = (id: string) => {
-    setCtes(ctes.map(c => c.id === id ? { ...c, financeConfirmed: false, financeRejected: true } : c));
+    const cte = ctes.find(c => c.id === id);
+    if (cte) {
+      updateCte({ ...cte, financeConfirmed: false, financeRejected: true });
+    }
   };
 
   const formatCurrency = (value: number) => {

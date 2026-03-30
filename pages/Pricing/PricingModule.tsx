@@ -6,11 +6,11 @@ import { db } from '../../firebase';
 
 interface PricingModuleProps {
   pricingConfigs: PricingConfig[];
-  setPricingConfigs: React.Dispatch<React.SetStateAction<PricingConfig[]>>;
+  updatePricingConfig: (updatedConfig: PricingConfig) => void;
   currentUser: User;
 }
 
-const PricingModule: React.FC<PricingModuleProps> = ({ pricingConfigs, setPricingConfigs, currentUser }) => {
+const PricingModule: React.FC<PricingModuleProps> = ({ pricingConfigs, updatePricingConfig, currentUser }) => {
   const [configs, setConfigs] = useState<PricingConfig[]>(pricingConfigs);
   const isAdmin = currentUser.role === 'Administrador';
 
@@ -22,7 +22,7 @@ const PricingModule: React.FC<PricingModuleProps> = ({ pricingConfigs, setPricin
     if (!isAdmin) return;
     try {
       for (const config of configs) {
-        await setDoc(doc(db, 'pricingConfigs', config.id), config);
+        updatePricingConfig(config);
       }
       alert('Configurações de precificação salvas com sucesso!');
     } catch (error) {

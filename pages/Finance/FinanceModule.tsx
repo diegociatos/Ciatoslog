@@ -17,10 +17,14 @@ interface FinanceModuleProps {
   updateTransaction: (transaction: Transaction) => void;
   bankAccounts: BankAccount[];
   dreCategories: DRECategory[];
-  setDreCategories?: React.Dispatch<React.SetStateAction<DRECategory[]>>;
+  addDreCategory: (newCategory: Omit<DRECategory, 'id'>) => void;
+  updateDreCategory: (updatedCategory: DRECategory) => void;
+  deleteDreCategory: (categoryId: string) => void;
   clients: any[];
   ctes: CteRecord[];
-  setCtes: React.Dispatch<React.SetStateAction<CteRecord[]>>;
+  addCte: (newCte: Omit<CteRecord, 'id'>) => void;
+  updateCte: (updatedCte: CteRecord) => void;
+  deleteCte: (cteId: string) => void;
   currentUser: User;
 }
 
@@ -34,13 +38,17 @@ const FinanceModule: React.FC<FinanceModuleProps> = ({
   updateTransaction,
   bankAccounts,
   dreCategories,
-  setDreCategories,
+  addDreCategory,
+  updateDreCategory,
+  deleteDreCategory,
   clients,
   ctes,
-  setCtes,
+  addCte,
+  updateCte,
+  deleteCte,
   currentUser
 }) => {
-  const [activeTab, setActiveTab] = useState<FinanceTab>(currentUser.role === 'Gestor' ? 'Ordens de Pagamento' : 'Fluxo de Caixa');
+  const [activeTab, setActiveTab] = useState<FinanceTab>(currentUser.role.includes('Gestor') ? 'Ordens de Pagamento' : 'Fluxo de Caixa');
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
 
@@ -79,9 +87,15 @@ const FinanceModule: React.FC<FinanceModuleProps> = ({
       case 'DRE':
         return <DynamicDRE transactions={completedTransactions} dreCategories={dreCategories} clients={clients} />;
       case 'Valuation':
-        return <CompanyValuation transactions={completedTransactions} dreCategories={dreCategories} setDreCategories={setDreCategories} />;
+        return <CompanyValuation 
+          transactions={completedTransactions} 
+          dreCategories={dreCategories} 
+          addDreCategory={addDreCategory}
+          updateDreCategory={updateDreCategory}
+          deleteDreCategory={deleteDreCategory}
+        />;
       case 'Recebimentos CTE':
-        return <CteReceivables ctes={ctes} setCtes={setCtes} />;
+        return <CteReceivables ctes={ctes} updateCte={updateCte} />;
       default:
         return null;
     }
@@ -112,12 +126,12 @@ const FinanceModule: React.FC<FinanceModuleProps> = ({
 
       <div className="flex border-b border-gray-200 bg-white rounded-t-3xl shadow-sm px-6">
         {[
-          { id: 'Fluxo de Caixa', label: 'Fluxo de Caixa', icon: <Wallet size={18} />, hideForGestor: true },
+          { id: 'Fluxo de Caixa', label: 'Fluxo de Caixa', icon: <Wallet size={18} /> },
           { id: 'Ordens de Pagamento', label: 'Ordens de Pagamento', icon: <Clock size={18} /> },
           { id: 'Recebimentos CTE', label: 'Recebimentos CTE', icon: <CheckCircle size={18} /> },
-          { id: 'DRE', label: 'DRE', icon: <FileSpreadsheet size={18} />, hideForGestor: true },
-          { id: 'Valuation', label: 'Valuation & Histórico', icon: <TrendingUp size={18} />, hideForGestor: true }
-        ].filter(tab => !(currentUser.role === 'Gestor' && tab.hideForGestor)).map((tab: any) => (
+          { id: 'DRE', label: 'DRE', icon: <FileSpreadsheet size={18} /> },
+          { id: 'Valuation', label: 'Valuation & Histórico', icon: <TrendingUp size={18} /> }
+        ].map((tab: any) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as FinanceTab)}
