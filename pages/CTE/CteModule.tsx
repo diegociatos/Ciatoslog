@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Edit3, Trash2, Save, X, FileText, CheckCircle, Ban, AlertCircle, Download, XCircle } from 'lucide-react';
+import { Plus, Search, Edit3, Trash2, Save, X, FileText, CheckCircle, Ban, AlertCircle, Download, XCircle, Upload } from 'lucide-react';
 import { CteRecord, User } from '../../App';
+import * as XLSX from 'xlsx';
 
 interface CteModuleProps {
   ctes: CteRecord[];
@@ -42,7 +43,9 @@ const CteModule: React.FC<CteModuleProps> = ({ ctes, addCte, updateCte, deleteCt
     taxesValue: 0,
     status: 'ATIVO',
     financeConfirmed: false,
-    financeRejected: false
+    financeRejected: false,
+    dueDate: '',
+    paymentConfirmed: false
   });
 
   const isComercial = isAdmin || (currentUser.role === 'Comercial' && !formData.financeRejected);
@@ -85,6 +88,50 @@ const CteModule: React.FC<CteModuleProps> = ({ ctes, addCte, updateCte, deleteCt
     if (ctes.length === 0) return '1';
     const maxNumber = Math.max(...ctes.map(c => parseInt(c.cteNumber) || 0));
     return (maxNumber + 1).toString();
+  };
+
+  const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const bstr = evt.target?.result;
+      const wb = XLSX.read(bstr, { type: 'binary' });
+      const wsname = wb.SheetNames[0];
+      const ws = wb.Sheets[wsname];
+      const data: any[] = XLSX.utils.sheet_to_json(ws);
+      
+      data.forEach(item => {
+        const newCte: CteRecord = {
+          id: Math.random().toString(36).substr(2, 9),
+          cteNumber: item['CTE']?.toString() || '',
+          emissionDate: item['Data Emissão'] || '',
+          customer: item['Cliente'] || '',
+          origin: item['Origem'] || '',
+          destination: item['Destino'] || '',
+          cteValue: Number(item['Valor CTE']) || 0,
+          driverName: item['Motorista'] || '',
+          driverCpf: item['CPF']?.toString() || '',
+          driverFreight: Number(item['Valor Carreteiro']) || 0,
+          advanceValue: Number(item['Adiantamento']) || 0,
+          advanceDate: item['Data Adiantamento'] || '',
+          balanceValue: Number(item['Saldo']) || 0,
+          balanceDate: item['Data Saldo'] || '',
+          extraValue: Number(item['Pedágio']) || 0,
+          extraReference: item['Referência (Extra)'] || '',
+          tollValue: Number(item['Pedágio']) || 0,
+          taxesRetained: Number(item['Tributos']) || 0,
+          status: 'ATIVO',
+          financeConfirmed: false,
+          financeRejected: false,
+          dueDate: item['Data Vencimento'] || '',
+          paymentConfirmed: false
+        };
+        addCte(newCte);
+      });
+    };
+    reader.readAsBinaryString(file);
   };
 
   const handleOpenForm = (cte?: CteRecord) => {
@@ -239,7 +286,7 @@ const CteModule: React.FC<CteModuleProps> = ({ ctes, addCte, updateCte, deleteCt
       'CTE', 'Status', 'Data Emissão', 'Cliente', 'Origem', 'Destino',
       'Valor CTE', 'Motorista', 'CPF', 'Valor Carreteiro', 'Adiantamento',
       'Data Adiantamento', 'Saldo', 'Data Saldo', 'Pedágio', 'Valor Extra',
-      'Referência (Extra)', 'Tributos', 'Financeiro Confirmado'
+      'Referência (Extra)', 'Tributos', 'Financeiro Confirmado', 'Data Vencimento', 'Pagamento Confirmado'
     ];
 
     const rows = filteredCtes.map(cte => [
@@ -261,7 +308,9 @@ const CteModule: React.FC<CteModuleProps> = ({ ctes, addCte, updateCte, deleteCt
       cte.extraValue,
       cte.extraReference,
       cte.taxesRetained,
-      cte.financeConfirmed ? 'Sim' : 'Não'
+      cte.financeConfirmed ? 'Sim' : 'Não',
+      cte.dueDate ? formatDate(cte.dueDate) : '',
+      cte.paymentConfirmed ? 'Sim' : 'Não'
     ]);
 
     const csvContent = [
@@ -302,6 +351,14 @@ const CteModule: React.FC<CteModuleProps> = ({ ctes, addCte, updateCte, deleteCt
             <Download size={20} />
             Exportar Excel
           </button>
+          <input type="file" id="excel-upload" className="hidden" accept=".xlsx, .xls" onChange={handleImportExcel} />
+          <label 
+            htmlFor="excel-upload"
+            className="bg-white text-gray-700 border border-gray-200 px-4 py-3 rounded-xl font-bold hover:bg-gray-50 transition-all shadow-sm flex items-center gap-2 cursor-pointer"
+          >
+            <Upload size={20} />
+            Importar Excel
+          </label>
           <button 
             onClick={() => handleOpenForm()}
             className="bg-bordeaux text-white px-6 py-3 rounded-xl font-bold hover:bg-bordeaux/90 transition-all shadow-lg flex items-center gap-2"
@@ -353,6 +410,7 @@ const CteModule: React.FC<CteModuleProps> = ({ ctes, addCte, updateCte, deleteCt
                 <th className="px-4 py-3">Motorista</th>
                 <th className="px-4 py-3">Custos Extras</th>
                 <th className="px-4 py-3">Tributos</th>
+                <th className="px-4 py-3">Vencimento</th>
                 <th className="px-4 py-3">Financeiro</th>
                 <th className="px-4 py-3 rounded-tr-lg text-right">Ações</th>
               </tr>
@@ -380,6 +438,7 @@ const CteModule: React.FC<CteModuleProps> = ({ ctes, addCte, updateCte, deleteCt
                     </div>
                   </td>
                   <td className="px-4 py-3 text-red-600">{formatCurrency(cte.taxesRetained)}</td>
+                  <td className="px-4 py-3">{cte.dueDate ? formatDate(cte.dueDate) : '-'}</td>
                   <td className="px-4 py-3">
                     {cte.financeRejected ? (
                       <span className="flex items-center gap-1 text-red-600 text-xs font-bold bg-red-100 px-2 py-1 rounded-md w-fit">
@@ -390,9 +449,19 @@ const CteModule: React.FC<CteModuleProps> = ({ ctes, addCte, updateCte, deleteCt
                         <CheckCircle size={14} /> Confirmado
                       </span>
                     ) : (
-                      <span className="flex items-center gap-1 text-amber-600 text-xs font-bold bg-amber-50 px-2 py-1 rounded-md w-fit">
-                        <AlertCircle size={14} /> Pendente
-                      </span>
+                      <div className="flex flex-col gap-2">
+                        <span className="flex items-center gap-1 text-amber-600 text-xs font-bold bg-amber-50 px-2 py-1 rounded-md w-fit">
+                          <AlertCircle size={14} /> Pendente
+                        </span>
+                        {isFinanceiro && (
+                          <button 
+                            onClick={() => updateCte({...cte, financeConfirmed: true, paymentConfirmed: true})}
+                            className="text-xs bg-emerald-600 text-white px-2 py-1 rounded-md hover:bg-emerald-700"
+                          >
+                            Confirmar Pagamento
+                          </button>
+                        )}
+                      </div>
                     )}
                   </td>
                   <td className="px-4 py-3 text-right">

@@ -39,6 +39,7 @@ interface SettingsModuleProps {
   updateClientTypes: (newTypes: string[]) => void;
   pricingConfigs: PricingConfig[];
   updatePricingConfig: (updatedConfig: PricingConfig) => void;
+  currentUser: User;
 }
 
 const SettingsModule: React.FC<SettingsModuleProps> = ({ 
@@ -62,9 +63,20 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({
   clientTypes,
   updateClientTypes,
   pricingConfigs,
-  updatePricingConfig
+  updatePricingConfig,
+  currentUser
 }) => {
-  const [activeTab, setActiveTab] = useState<'Veiculos' | 'Bancos' | 'DRE' | 'Metas' | 'Clientes' | 'Precificacao'>('Veiculos');
+  const isGestor = currentUser.role.includes('Gestor');
+  const [activeTab, setActiveTab] = useState<'Veiculos' | 'Bancos' | 'DRE' | 'Metas' | 'Clientes' | 'Precificacao'>(isGestor ? 'Veiculos' : 'Veiculos');
+
+  const tabs = [
+    { id: 'Veiculos', label: 'Tipos de Veículos', icon: <Truck size={18} /> },
+    { id: 'Bancos', label: 'Bancos e Caixas', icon: <DollarSign size={18} />, restricted: isGestor },
+    { id: 'DRE', label: 'Categorias DRE', icon: <Layers size={18} />, restricted: isGestor },
+    { id: 'Metas', label: 'Metas e Comissões', icon: <TrendingUp size={18} />, restricted: isGestor },
+    { id: 'Clientes', label: 'Config. Clientes', icon: <Building2 size={18} /> },
+    { id: 'Precificacao', label: 'Precificação', icon: <ShieldCheck size={18} />, restricted: isGestor }
+  ].filter(tab => !tab.restricted);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-10">
@@ -81,17 +93,10 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({
 
       {/* Navegação por Abas */}
       <div className="flex border-b border-gray-200 bg-white rounded-t-3xl shadow-sm px-6 overflow-x-auto">
-        {[
-          { id: 'Veiculos', label: 'Tipos de Veículos', icon: <Truck size={18} /> },
-          { id: 'Bancos', label: 'Bancos e Caixas', icon: <DollarSign size={18} /> },
-          { id: 'DRE', label: 'Categorias DRE', icon: <Layers size={18} /> },
-          { id: 'Metas', label: 'Metas e Comissões', icon: <TrendingUp size={18} /> },
-          { id: 'Clientes', label: 'Config. Clientes', icon: <Building2 size={18} /> },
-          { id: 'Precificacao', label: 'Precificação', icon: <ShieldCheck size={18} /> }
-        ].map((tab: any) => (
+        {tabs.map((tab: any) => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => setActiveTab(tab.id as any)}
             className={`px-8 py-5 font-black text-xs uppercase tracking-widest transition-all border-b-4 flex items-center gap-3 whitespace-nowrap ${
               activeTab === tab.id 
                 ? 'border-bordeaux text-bordeaux bg-bordeaux/5' 

@@ -114,7 +114,7 @@ export interface CteRecord {
   financeConfirmed: boolean;
   financeRejected?: boolean;
   dueDate?: string;
-  isPaid?: boolean;
+  paymentConfirmed?: boolean;
 }
 
 export interface RouteEntry {
@@ -504,7 +504,7 @@ const App: React.FC = () => {
 
   // Fetch users from Firestore
   useEffect(() => {
-    if (!isAuthenticated || !currentUser) return;
+    if (!isAuthReady || !currentUser) return;
     
     // Only admins can read all users, but users can read their own profile.
     // For simplicity, if the user is not an admin, we just set their own profile in the users array.
@@ -525,7 +525,7 @@ const App: React.FC = () => {
     });
 
     return () => unsubscribe();
-  }, [isAuthenticated, currentUser]);
+  }, [isAuthReady, currentUser]);
 
   // Fetch pricingConfigs from Firestore
   useEffect(() => {
@@ -595,7 +595,7 @@ const App: React.FC = () => {
 
   // Fetch transactions from Firestore
   useEffect(() => {
-    if (!isAuthenticated || !currentUser) return;
+    if (!isAuthReady || !currentUser || currentUser.role === 'Cliente') return;
     
     const unsubscribe = onSnapshot(collection(db, 'transactions'), (snapshot) => {
       const transactionsData: Transaction[] = [];
@@ -611,7 +611,7 @@ const App: React.FC = () => {
     });
 
     return () => unsubscribe();
-  }, [isAuthenticated, currentUser]);
+  }, [isAuthReady, currentUser]);
 
   // Fetch ctes from Firestore
   useEffect(() => {
@@ -634,7 +634,7 @@ const App: React.FC = () => {
 
   // Fetch bankAccounts from Firestore
   useEffect(() => {
-    if (!isAuthenticated || !currentUser) return;
+    if (!isAuthReady || !currentUser || currentUser.role === 'Cliente') return;
     
     const unsubscribe = onSnapshot(collection(db, 'bankAccounts'), (snapshot) => {
       const accountsData: BankAccount[] = [];
@@ -649,11 +649,11 @@ const App: React.FC = () => {
     });
 
     return () => unsubscribe();
-  }, [isAuthenticated, currentUser]);
+  }, [isAuthReady, currentUser]);
 
   // Fetch dreCategories from Firestore
   useEffect(() => {
-    if (!isAuthenticated || !currentUser) return;
+    if (!isAuthReady || !currentUser || currentUser.role === 'Cliente') return;
     
     const unsubscribe = onSnapshot(collection(db, 'dreCategories'), (snapshot) => {
       const categoriesData: DRECategory[] = [];
@@ -668,7 +668,7 @@ const App: React.FC = () => {
     });
 
     return () => unsubscribe();
-  }, [isAuthenticated, currentUser]);
+  }, [isAuthReady, currentUser]);
 
   // Helper visual para badges de empresa
   const getCompanyBadge = (id: string | undefined) => {
@@ -742,7 +742,7 @@ const App: React.FC = () => {
       
       switch (item.id) {
         case Module.Dashboard:
-          return isComercial || isFinanceiro || isOperacional || isGestor;
+          return isComercial || isFinanceiro || isOperacional || isGestor || isCliente;
         case Module.Comercial:
         case Module.Clientes:
           return isComercial || isFinanceiro || isGestor;
@@ -756,7 +756,7 @@ const App: React.FC = () => {
         case Module.Financeiro:
           return isFinanceiro || isGestor;
         case Module.Usuarios:
-          return isFinanceiro || isGestor;
+          return isFinanceiro;
         case Module.Precificacao:
           return isFinanceiro || isGestor || isComercial;
         case Module.Configuracoes:
@@ -1199,6 +1199,7 @@ const App: React.FC = () => {
           updateClientTypes={updateClientTypes}
           pricingConfigs={pricingConfigs}
           updatePricingConfig={updatePricingConfig}
+          currentUser={currentUser}
         />;
       default:
         return <div className="p-10 text-center italic text-gray-400">Módulo em desenvolvimento...</div>;

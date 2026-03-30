@@ -126,12 +126,12 @@ const FinanceModule: React.FC<FinanceModuleProps> = ({
 
       <div className="flex border-b border-gray-200 bg-white rounded-t-3xl shadow-sm px-6">
         {[
-          { id: 'Fluxo de Caixa', label: 'Fluxo de Caixa', icon: <Wallet size={18} /> },
+          { id: 'Fluxo de Caixa', label: 'Fluxo de Caixa', icon: <Wallet size={18} />, restricted: currentUser.role.includes('Gestor') },
           { id: 'Ordens de Pagamento', label: 'Ordens de Pagamento', icon: <Clock size={18} /> },
           { id: 'Recebimentos CTE', label: 'Recebimentos CTE', icon: <CheckCircle size={18} /> },
-          { id: 'DRE', label: 'DRE', icon: <FileSpreadsheet size={18} /> },
-          { id: 'Valuation', label: 'Valuation & Histórico', icon: <TrendingUp size={18} /> }
-        ].map((tab: any) => (
+          { id: 'DRE', label: 'DRE', icon: <FileSpreadsheet size={18} />, restricted: currentUser.role.includes('Gestor') },
+          { id: 'Valuation', label: 'Valuation & Histórico', icon: <TrendingUp size={18} />, restricted: currentUser.role.includes('Gestor') }
+        ].filter(tab => !tab.restricted).map((tab: any) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as FinanceTab)}
