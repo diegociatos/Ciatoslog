@@ -21,7 +21,8 @@ import {
   Camera,
   Upload,
   User as UserIcon,
-  ChevronLeft
+  ChevronLeft,
+  Folder
 } from 'lucide-react';
 import { onAuthStateChanged, signOut, signInWithEmailAndPassword, updatePassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc, setDoc, onSnapshot, collection, updateDoc, deleteDoc } from 'firebase/firestore';
@@ -38,6 +39,7 @@ import CteModule from './pages/CTE/CteModule';
 import CteEmissionModule from './pages/CTE/CteEmissionModule';
 import TransportManagementModule from './pages/TransportManagement/TransportManagementModule';
 import PricingModule from './pages/Pricing/PricingModule';
+import DocumentsModule from './pages/Documents/DocumentsModule';
 import CommercialDashboard from './pages/Commercial/CommercialDashboard';
 import ProgrammerDashboard from './pages/Programming/ProgrammerDashboard';
 import FinancialDashboard from './pages/Finance/FinancialDashboard';
@@ -74,7 +76,8 @@ export enum Module {
   Transportes = 'Gestão de Transportes',
   Usuarios = 'Usuários',
   Precificacao = 'Precificação',
-  Configuracoes = 'Configurações'
+  Configuracoes = 'Configurações',
+  Documentos = 'Documentos'
 }
 
 export interface PricingConfig {
@@ -726,6 +729,7 @@ const App: React.FC = () => {
       { id: Module.Financeiro, icon: <CircleDollarSign size={20} />, label: 'Financeiro' },
       { id: Module.Usuarios, icon: <Users size={20} />, label: 'Usuários' },
       { id: Module.Configuracoes, icon: <Settings size={20} />, label: 'Configurações' },
+      { id: Module.Documentos, icon: <Folder size={20} />, label: 'Documentos' },
     ];
 
     const role = currentUser.role;
@@ -753,6 +757,8 @@ const App: React.FC = () => {
           return isComercial || isOperacional || isFinanceiro || isGestor;
         case Module.Transportes:
           return isOperacional || isComercial || isCliente || isGestor;
+        case Module.Documentos:
+          return isCliente || isGestor || isFinanceiro;
         case Module.Financeiro:
           return isFinanceiro || isGestor;
         case Module.Usuarios:
@@ -1170,6 +1176,8 @@ const App: React.FC = () => {
           clients={clients}
           currentUser={currentUser}
         />;
+      case Module.Documentos:
+        return <DocumentsModule ctes={ctes} currentUser={currentUser} />;
       case Module.Precificacao:
         return <PricingModule 
           pricingConfigs={pricingConfigs} 
